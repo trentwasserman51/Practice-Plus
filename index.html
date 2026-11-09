@@ -387,6 +387,7 @@ if(!S.mirrorV1){
   S.mirrorV1=true;
 }
 function sched(p){ if(schedKey!=='team'){const g=p.groups.find(g=>g.id===schedKey); if(g) return {blocks:g.blocks,start:g.start,obj:g};} schedKey='team'; return {blocks:p.blocks,start:p.start,obj:p}; }
+if(!S.vidsV1){ S.vids=JSON.parse(JSON.stringify(VIDS)); S.vids.forEach(t=>t.items.forEach(i=>i.id=uid())); S.vidsV1=true; }
 if(!S.calV1){
   let ws=weekStart(todayISO());
   while(ws<='2026-12-19'){ fillWeek(ws,todayISO()); ws=addDays(ws,7); }
@@ -427,6 +428,42 @@ function renderTop(){
     `<button class="${active===k?'on':''}" data-act="nav" data-id="${k}"><svg viewBox="0 0 24 24">${ic[k]}</svg>${l}</button>`).join('');
 }
 
+function vidSheet(it,isNew){
+  const TABS=VT(), tab=TABS.find(t=>t.items.includes(it))||TABS.find(t=>t.id===vidTab)||TABS[0];
+  const groups=[...new Set(tab.items.map(x=>x.g).filter(Boolean))];
+  sheet(`<h3>${isNew?'Add to '+esc(tab.name):'Edit item'}</h3>
+  <label class="f" for="vt">Title</label><input class="in" id="vt" value="${esc(it.t||'')}" placeholder="e.g. Tatis good momentum">
+  <div class="mt"><label class="f" for="vu">Link</label><input class="in" id="vu" type="url" value="${esc(it.u||'')}" placeholder="Paste a Google Drive or YouTube link"></div>
+  <p class="muted small" style="margin:6px 0 0">Drive files must be shared as “Anyone with the link” so players can open them.</p>
+  <div class="mt"><label class="f" for="vk">Type</label><select class="in" id="vk">${[['video','Video'],['image','Picture'],['doc','Document'],['folder','Folder']].map(([k,l])=>`<option value="${k}" ${(it.k||'video')===k?'selected':''}>${l}</option>`).join('')}</select></div>
+  <div class="mt"><label class="f" for="vg">Section (optional)</label><input class="in" id="vg" list="vgl" value="${esc(it.g||'')}" placeholder="Pick or type a section"><datalist id="vgl">${groups.map(g=>`<option value="${esc(g)}">`).join('')}</datalist></div>
+  ${TABS.length>1?`<div class="mt"><label class="f" for="vtab">Tab</label><select class="in" id="vtab">${TABS.map(t=>`<option value="${t.id}" ${t.id===tab.id?'selected':''}>${esc(t.name)}</option>`).join('')}</select></div>`:''}
+  <div class="grid2 mt"><button class="btn" data-act="close">Cancel</button><button class="btn gold" id="vsave">Save</button></div>
+  ${isNew?'':'<button class="btn danger full mt" id="vdel">Delete</button>'}`);
+  document.getElementById('vsave').onclick=()=>{
+    const t=document.getElementById('vt').value.trim(), u=document.getElementById('vu').value.trim();
+    if(!t||!u){toast('Add a title and a link');return;}
+    if(!/^https?:\/\//i.test(u)){toast('The link should start with https://');return;}
+    const g=document.getElementById('vg').value.trim(), k=document.getElementById('vk').value;
+    const tsel=document.getElementById('vtab'), dest=tsel?TABS.find(x=>x.id===tsel.value):tab;
+    const item=isNew?{id:uid()}:it; Object.assign(item,{t,u,k,g});
+    if(!isNew) tab.items.splice(tab.items.indexOf(it),1);
+    const L=dest.items, last=g?L.map(x=>x.g).lastIndexOf(g):-1;
+    if(last>=0) L.splice(last+1,0,item); else if(g) L.unshift(item); else L.push(item);
+    vidTab=dest.id; save(); closeSheet(); render(); toast(isNew?'Added':'Saved');
+  };
+  const del=document.getElementById('vdel');
+  if(del) del.onclick=()=>confirmSheet('Delete “'+it.t+'”?',()=>{tab.items.splice(tab.items.indexOf(it),1); save(); render(); toast('Deleted');});
+}
+function vtabSheet(t){
+  sheet(`<h3>${t?'Edit tab':'New tab'}</h3><label class="f" for="vtn">Tab name</label><input class="in" id="vtn" value="${esc(t?t.name:'')}" placeholder="e.g. Pitching">
+  <div class="grid2 mt"><button class="btn" data-act="close">Cancel</button><button class="btn gold" id="vts">Save</button></div>
+  ${t?`<button class="btn danger full mt" id="vtd">Delete this tab${t.items.length?' and its '+t.items.length+' items':''}</button>`:''}`);
+  document.getElementById('vts').onclick=()=>{const n=document.getElementById('vtn').value.trim(); if(!n){toast('Name the tab');return;}
+    if(t) t.name=n; else { const nt={id:uid(),name:n,items:[]}; S.vids.push(nt); vidTab=nt.id; } save(); closeSheet(); render(); };
+  const d=document.getElementById('vtd');
+  if(d) d.onclick=()=>{ if(S.vids.length<2){toast('Keep at least one tab');return;} confirmSheet('Delete the '+t.name+' tab?',()=>{S.vids.splice(S.vids.indexOf(t),1); vidTab=S.vids[0].id; save(); render();}); };
+}
 function acctBar(){
   return `<div class="row mt" style="gap:8px;flex-wrap:wrap"><span class="muted small grow">Signed in as ${esc(ACCT.email)} · ${ACCT.role==='coach'?'Coach (can edit)':'Player (view only)'}</span>${ACCT.role==='coach'?`<button class="btn sm" data-act="teamview">Team accounts</button>`:''}<button class="btn sm" data-act="signout">Sign out</button></div>`;
 }
@@ -557,11 +594,13 @@ function vLibrary(){
   return h;
 }
 
+function VT(){return (S.vids&&S.vids.length)?S.vids:VIDS;}
 function vVideos(){
-  const tab=VIDS.find(t=>t.id===vidTab)||VIDS[0], q=vidQ.toLowerCase();
+  const TABS=VT(); const tab=TABS.find(t=>t.id===vidTab)||TABS[0], q=vidQ.toLowerCase(); const ED=!RO;
   const IC={video:'▶',image:'▣',doc:'≡',folder:'▤'};
   const list=tab.items.filter(i=>!q||(i.t+' '+i.g).toLowerCase().includes(q));
-  let h=`<h2>Videos / Thoughts</h2><div class="chips" style="flex-wrap:wrap">${VIDS.map(t=>`<button class="${t.id===tab.id?'on':''}" data-act="vidtab" data-id="${t.id}">${esc(t.name)} <span style="opacity:.6">${t.items.length}</span></button>`).join('')}</div>
+  let h=`<h2>Videos / Thoughts</h2><div class="chips" style="flex-wrap:wrap">${TABS.map(t=>`<button class="${t.id===tab.id?'on':''}" data-act="vidtab" data-id="${t.id}">${esc(t.name)} <span style="opacity:.6">${t.items.length}</span></button>`).join('')}${ED?'<button data-act="vtabadd">+ Tab</button>':''}</div>
+  ${ED?`<div class="grid2 mt" style="margin-bottom:8px"><button class="btn sm gold" data-act="vadd">+ Add</button><button class="btn sm" data-act="vtabedit">Rename / delete tab</button></div>`:''}
   <input class="in" id="vidq" placeholder="Search ${esc(tab.name)}…" value="${esc(vidQ)}">`;
   if(tab.id==='mlb'||tab.id==='ncaa') h+=`<p class="muted small">Each ${tab.id==='mlb'?'hitter':'school'} opens a Drive folder of clips.</p>`;
   let g=null; h+='<div class="mt"></div>';
@@ -570,7 +609,8 @@ function vVideos(){
   let open=false;
   list.forEach(i=>{ if(grouped&&i.g!==g){ if(open) h+='</div>'; g=i.g; h+=`<div class="vgh">${esc(g)}</div><div class="card" style="padding:0">`; open=true; }
     else if(!open){ h+='<div class="card" style="padding:0">'; open=true; }
-    h+=`<a class="vrow" href="${esc(i.u)}" target="_blank" rel="noopener"><span class="ic">${IC[i.k]||'▶'}</span><span class="grow">${esc(i.t)}</span><span class="go">Open ›</span></a>`; });
+    const a=`<a class="vrow" href="${esc(i.u)}" target="_blank" rel="noopener"${ED?' style="flex:1;min-width:0;border:0"':''}><span class="ic">${IC[i.k]||'▶'}</span><span class="grow">${esc(i.t)}</span><span class="go">Open ›</span></a>`;
+    h+= ED&&i.id ? `<div class="vrw" style="display:flex;align-items:center;border-top:1px solid var(--line,#22314f)">${a}<button class="btn sm" style="margin-right:8px" data-act="vedit" data-id="${i.id}" aria-label="Edit ${esc(i.t)}">✎</button></div>` : a; });
   if(open) h+='</div>';
   return h;
 }
@@ -784,6 +824,10 @@ document.addEventListener('click',e=>{
     case 'pickdrill': {const d=S.drills.find(x=>x.id===id); o.blocks.push({id:uid(),name:d.name,cat:d.cat,min:d.min||10,stations:[],notes:'',video:d.video||''}); save(); toast('Added to '+(schedKey==='team'?'team':o.name)+': '+d.name); break;}
     case 'libcat': libCat=id; render(); break;
     case 'vidtab': vidTab=id; vidQ=''; render(); window.scrollTo(0,0); break;
+    case 'vadd': if(!RO) vidSheet({},true); break;
+    case 'vedit': { if(RO) break; const it=VT().flatMap(t=>t.items).find(x=>x.id===id); if(it) vidSheet(it,false); break; }
+    case 'vtabadd': if(!RO) vtabSheet(null); break;
+    case 'vtabedit': { if(RO) break; const t=VT().find(x=>x.id===vidTab)||VT()[0]; vtabSheet(t); break; }
     case 'expd': openDr.has(id)?openDr.delete(id):openDr.add(id); {const y=window.scrollY; render(); window.scrollTo(0,y);} break;
     case 'newdrill': drillSheet({id:uid(),name:'',lib:libCat==='all'?'team':libCat,cat:LIBS[libCat==='all'?'team':libCat].cat,min:10,desc:'',custom:true},true); break;
     case 'editdrill': e.stopPropagation(); drillSheet(S.drills.find(x=>x.id===id),false); break;
