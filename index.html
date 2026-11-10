@@ -297,7 +297,7 @@ function fillWeek(ws,from){
     let tpl=S.templates.find(t=>t.id===r.tplId); if(!tpl) return;
     if(r.trim||r.teamOnly||r.start){ tpl={...trimmed(tpl,r.trim||0,r.start||tpl.start,r.teamOnly),id:tpl.id}; }
     if(S.plans.some(p=>p.team===r.team&&p.date===d)) return;
-    S.plans.push(planFromTpl(tpl,r.team,d)); n++;});
+    const np=planFromTpl(tpl,r.team,d); if(r.lift) np.blocks.push({id:uid(),name:'Lift',cat:'cond',min:r.lift,stations:[],notes:''}); S.plans.push(np); n++;});
   return n;
 }
 if(!S.weeklyV1){
@@ -461,6 +461,22 @@ if(!S.liftV1){ const D='2026-11-12';
     S.plans.push({id:uid(),team:'gcc',date:D,start:'18:00',location:'',focus:'Lifts only (practice canceled) · Pitchers 3:15–4:30 · Position players 6:00–7:15',notes:'',gear:'',quote:'',blocks:[ppl],
       groups:[{id:uid(),name:'Pitchers',start:'15:15',blocks:[pl]}]}); }
   S.liftV1=true; }
+
+if(!S.liftPicV1){ const T=id=>'https://drive.google.com/thumbnail?id='+id+'&sz=w1600';
+  const PICS=[{n:'Warm up 1',u:T('1zbxOeTzAEAPoQ3lFQN5gUZXsBHmcCzH1'),k:'image'},{n:'Lift 1',u:T('1H1tEMHbfF2Dk6Nfmkq0UmHFIjBk5umza'),k:'image'}];
+  const add=b=>{ if(b.cat!=='cond'||!/lift/i.test(b.name||'')) return; b.files=b.files||[]; PICS.forEach(f=>{ if(!b.files.some(x=>x.u===f.u)) b.files.push({...f}); }); };
+  S.plans.filter(p=>p.date>='2026-11-10'&&p.date<='2026-11-30').forEach(p=>{ p.blocks.forEach(add); (p.groups||[]).forEach(g=>g.blocks.forEach(add)); });
+  S.liftPicV1=true; }
+
+if(!S.sbLiftV1){ const T=id=>'https://drive.google.com/thumbnail?id='+id+'&sz=w1600';
+  const PICS=[{n:'Warm up 1',u:T('1zbxOeTzAEAPoQ3lFQN5gUZXsBHmcCzH1'),k:'image'},{n:'Lift 1',u:T('1H1tEMHbfF2Dk6Nfmkq0UmHFIjBk5umza'),k:'image'}];
+  const LB=d=>({id:uid(),name:'Lift',cat:'cond',min:60,stations:[],notes:'',focus:'',files:d<='2026-11-30'?PICS.map(f=>({...f})):[]});
+  (S.rules||[]).forEach(r=>{ if(r.team==='muck'&&[2,4,6].includes(r.dow)) r.lift=60; });
+  S.plans.filter(p=>p.team==='muck'&&p.date>='2026-11-10'&&p.date<='2026-12-31'&&[2,4,6].includes(parseD(p.date).getDay())&&!/bills/i.test(p.focus||'')).forEach(p=>{
+    if(p.blocks.some(b=>b.cat==='cond'&&/lift/i.test(b.name))||(p.groups||[]).some(g=>g.blocks.some(b=>/lift/i.test(b.name)))) return;
+    if(p.date==='2026-11-12'){ p.groups=p.groups||[]; p.groups.push({id:uid(),name:'Lift',start:'16:30',blocks:[LB(p.date)]}); p.focus='Softball pool 12:30 · Lift 4:30–5:30 (practice canceled)'; return; }
+    p.blocks.push(LB(p.date)); });
+  S.sbLiftV1=true; }
 
 save();
 
