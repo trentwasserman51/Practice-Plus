@@ -1084,7 +1084,10 @@ function busyUI(){const l=document.getElementById('layer');return pending||(l&&l
 const newFlags=(loc,rem)=>Object.keys(loc).some(k=>/(V\d+|Undo)$/.test(k)&&loc[k]&&!rem[k]);
 async function pull(first){
   const a=await rest('GET','pp_docs?select=data,updated_at&path=eq.state');
-  if(a&&a[0]&&a[0].data){ if(first&&!RO&&newFlags(S,a[0].data)){ await push(); return; } const js=JSON.stringify(a[0].data);if(js!==last){ if(!first&&busyUI())return; last=js; S=a[0].data; try{localStorage.setItem('practiceplus_v1',js);}catch(e){} const y=window.scrollY; render(); window.scrollTo(0,y);} }
+  if(a&&a[0]&&a[0].data){ if(first&&!RO&&newFlags(S,a[0].data)){ const tk=String(a[0].updated_at||JSON.stringify(a[0].data).length);
+      let done=null; try{done=sessionStorage.getItem('pp_mig');}catch(e){}
+      if(done===tk){ try{sessionStorage.removeItem('pp_mig');}catch(e){} await push(); return; }
+      try{ sessionStorage.setItem('pp_mig',tk); localStorage.setItem('practiceplus_v1',JSON.stringify(a[0].data)); location.reload(); return; }catch(e){ await push(); return; } } const js=JSON.stringify(a[0].data);if(js!==last){ if(!first&&busyUI())return; last=js; S=a[0].data; try{localStorage.setItem('practiceplus_v1',js);}catch(e){} const y=window.scrollY; render(); window.scrollTo(0,y);} }
   else if(first&&!RO){ await push(); }
 }
 async function push(){ if(RO||!sess)return; const js=JSON.stringify(S); if(js===last)return; last=js;
