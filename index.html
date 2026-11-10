@@ -478,6 +478,11 @@ if(!S.sbLiftV1){ const T=id=>'https://drive.google.com/thumbnail?id='+id+'&sz=w1
     p.blocks.push(LB(p.date)); });
   S.sbLiftV1=true; }
 
+if(!S.liftPicV3){ const PICS=[{n:'Warm up 1',u:'https://drive.google.com/file/d/1zbxOeTzAEAPoQ3lFQN5gUZXsBHmcCzH1/view',k:'image'},{n:'Lift 1',u:'https://drive.google.com/file/d/1H1tEMHbfF2Dk6Nfmkq0UmHFIjBk5umza/view',k:'image'}];
+  const fix=b=>{ if(b.cat!=='cond'||!/lift/i.test(b.name||'')) return; b.files=(b.files||[]).filter(f=>!/(1zbxOeTzAEAPoQ3lFQN5gUZXsBHmcCzH1|1H1tEMHbfF2Dk6Nfmkq0UmHFIjBk5umza|lift-1\.jpg|warm-up-1\.jpg)/.test(f.u)); PICS.forEach(f=>{ if(!b.files.some(x=>x.u===f.u)) b.files.push({...f}); }); };
+  S.plans.filter(p=>p.date>='2026-11-10'&&p.date<='2026-11-30').forEach(p=>{ p.blocks.forEach(fix); (p.groups||[]).forEach(g=>g.blocks.forEach(fix)); });
+  S.liftPicV3=true; }
+
 save();
 
 function toM(t){const[h,m]=(t||'15:00').split(':').map(Number);return h*60+m;}
@@ -544,9 +549,16 @@ function vtabSheet(t){
   const d=document.getElementById('vtd');
   if(d) d.onclick=()=>{ if(S.vids.length<2){toast('Keep at least one tab');return;} confirmSheet('Delete the '+t.name+' tab?',()=>{S.vids.splice(S.vids.indexOf(t),1); vidTab=S.vids[0].id; save(); render();}); };
 }
+function driveId(u){const m=String(u||'').match(/drive\.google\.com\/(?:file\/d\/|open\?id=|uc\?(?:export=\w+&)?id=|thumbnail\?id=)([\w-]{20,})/)||String(u||'').match(/googleusercontent\.com\/d\/([\w-]{20,})/);return m?m[1]:null;}
+function imgSrc(u){const id=driveId(u);return id?'https://lh3.googleusercontent.com/d/'+id+'=w1600':u;}
+function viewUrl(u){const id=driveId(u);return id?'https://drive.google.com/file/d/'+id+'/view':u;}
+function imgErr(el){const id=driveId(el.dataset.u),t=(el.dataset.t|0)+1;el.dataset.t=t;
+  if(id&&t===1){el.src='https://drive.google.com/thumbnail?id='+id+'&sz=w1600';return;}
+  if(id&&t===2){el.src='https://drive.google.com/uc?export=view&id='+id;return;}
+  el.onerror=null;const a=document.createElement('span');a.textContent='▣ '+(el.alt||'Picture');a.style.cssText='display:inline-flex;align-items:center;justify-content:center;width:'+el.style.width+';height:'+el.style.height+';border:1px solid rgba(128,128,128,.45);border-radius:8px;font-size:11px;text-align:center;padding:4px;color:inherit';el.replaceWith(a);}
 function focusHTML(b){const L=(b.focus||'').split('\n').map(x=>x.trim()).filter(Boolean);
   let h=L.length?`<div class="bfocus">${L.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:'';
-  const F=b.files||[]; if(F.length){ h+=`<div class="bfiles" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0">${F.map(f=>f.k==='image'?`<a href="${esc(f.u)}" target="_blank" rel="noopener" data-stop="1"><img src="${esc(f.u)}" alt="${esc(f.n)}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid rgba(128,128,128,.35)"></a>`:`<a href="${esc(f.u)}" target="_blank" rel="noopener" data-stop="1" style="display:inline-flex;align-items:center;padding:6px 12px;border-radius:999px;border:1px solid rgba(128,128,128,.45);font-size:13px;color:inherit;text-decoration:none;align-self:center">📎 ${esc(f.n)}</a>`).join('')}</div>`; }
+  const F=b.files||[]; if(F.length){ h+=`<div class="bfiles" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0">${F.map(f=>f.k==='image'?`<a href="${esc(viewUrl(f.u))}" target="_blank" rel="noopener" data-stop="1"><img src="${esc(imgSrc(f.u))}" data-u="${esc(f.u)}" onerror="imgErr(this)" alt="${esc(f.n)}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid rgba(128,128,128,.35)"></a>`:`<a href="${esc(f.u)}" target="_blank" rel="noopener" data-stop="1" style="display:inline-flex;align-items:center;padding:6px 12px;border-radius:999px;border:1px solid rgba(128,128,128,.45);font-size:13px;color:inherit;text-decoration:none;align-self:center">📎 ${esc(f.n)}</a>`).join('')}</div>`; }
   return h;}
 function acctBar(){
   return `<div class="row mt" style="gap:8px;flex-wrap:wrap"><span class="muted small grow">Signed in as ${esc(ACCT.email)} · ${ACCT.role==='coach'?'Coach (can edit)':'Player (view only)'}</span>${ACCT.role==='coach'?`<button class="btn sm" data-act="teamview">Players & programs</button>`:''}<button class="btn sm" data-act="signout">Sign out</button></div>`;
@@ -554,7 +566,7 @@ function acctBar(){
 function pName(m){return m&&m.name?m.name:(m?m.email:'');}
 function teamName(id){const t=TEAMS.find(x=>x.id===id);return t?t.name:'';}
 function progFilesHTML(F){F=F||[]; if(!F.length) return '';
-  return `<div style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:10px 0">${F.map(f=>f.k==='image'?`<a href="${esc(f.u)}" target="_blank" rel="noopener" data-stop="1"><img src="${esc(f.u)}" alt="${esc(f.n)}" style="width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid rgba(128,128,128,.35)"></a>`:`<a href="${esc(f.u)}" target="_blank" rel="noopener" data-stop="1" style="display:inline-flex;align-items:center;padding:8px 14px;border-radius:999px;border:1px solid rgba(128,128,128,.45);font-size:14px;color:inherit;text-decoration:none">${f.k==='link'?'🔗':'📄'} ${esc(f.n)}</a>`).join('')}</div>`;}
+  return `<div style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:10px 0">${F.map(f=>f.k==='image'?`<a href="${esc(viewUrl(f.u))}" target="_blank" rel="noopener" data-stop="1"><img src="${esc(imgSrc(f.u))}" data-u="${esc(f.u)}" onerror="imgErr(this)" alt="${esc(f.n)}" style="width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid rgba(128,128,128,.35)"></a>`:`<a href="${esc(f.u)}" target="_blank" rel="noopener" data-stop="1" style="display:inline-flex;align-items:center;padding:8px 14px;border-radius:999px;border:1px solid rgba(128,128,128,.45);font-size:14px;color:inherit;text-decoration:none">${f.k==='link'?'🔗':'📄'} ${esc(f.n)}</a>`).join('')}</div>`;}
 function myProgsCard(){
   if(!RO||!PROGS||!PROGS.length) return '';
   return `<div class="vgh">My programs</div>`+PROGS.map(g=>`<div class="card" data-act="prog" data-id="${esc(g.id)}" style="cursor:pointer"><div class="row"><b class="grow">${esc(g.name)}</b><span class="muted">›</span></div>${g.body?`<div class="muted small" style="margin-top:4px">${esc(g.body.split('\n')[0].slice(0,90))}</div>`:''}</div>`).join('');
@@ -608,7 +620,7 @@ function progSheet(){
   <label class="f" for="pg-n">Program name</label><input class="in" id="pg-n" value="${esc(d.name)}" placeholder="e.g. Return to Throw – Phase 1">
   <div class="mt"><label class="f" for="pg-b">Details</label><textarea class="in" id="pg-b" rows="8" placeholder="Week 1: 45 ft × 25 throws, 3 days&#10;Week 2: 60 ft × 25 throws…">${esc(d.body||'')}</textarea></div>
   <div class="mt"><label class="f">Files & pictures</label>
-    ${d.files.map((f,i)=>`<div class="row" style="gap:8px;margin:6px 0">${f.k==='image'?`<img src="${esc(f.u)}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:6px">`:'<span class="pill">'+(f.k==='link'?'Link':'File')+'</span>'}<span class="grow" style="word-break:break-all;font-size:14px">${esc(f.n)}</span><button class="btn sm" data-act="prmfile" data-id="${i}" aria-label="Remove">✕</button></div>`).join('')}
+    ${d.files.map((f,i)=>`<div class="row" style="gap:8px;margin:6px 0">${f.k==='image'?`<img src="${esc(imgSrc(f.u))}" data-u="${esc(f.u)}" onerror="imgErr(this)" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:6px">`:'<span class="pill">'+(f.k==='link'?'Link':'File')+'</span>'}<span class="grow" style="word-break:break-all;font-size:14px">${esc(f.n)}</span><button class="btn sm" data-act="prmfile" data-id="${i}" aria-label="Remove">✕</button></div>`).join('')}
     <div class="grid2"><button class="btn sm" data-act="pupfile">+ Upload picture / file</button><button class="btn sm" data-act="plinkfile">+ Add link</button></div>
     <div id="plnkrow" style="display:none" class="mt"><input class="in" id="plnku" type="url" placeholder="Paste a link (Drive, YouTube…)"><input class="in mt" id="plnkn" placeholder="Name (optional)"><button class="btn sm gold full mt" data-act="paddlink">Add link</button></div>
     <input type="file" id="pfile" multiple style="display:none"><div id="pupst" class="muted small"></div></div>
@@ -831,7 +843,7 @@ function blockSheet(b,isNew){
       ${draft.stations.map((s,i)=>`<div class="st-row"><input class="in" list="grpl" data-st="${i}" data-k="group" value="${esc(s.group)}" placeholder="Group"><input class="in" data-st="${i}" data-k="drill" value="${esc(s.drill)}" placeholder="Drill"><input class="in" data-st="${i}" data-k="coach" value="${esc(s.coach)}" placeholder="Coach"><button class="x" data-act="rmst" data-id="${i}">✕</button></div>`).join('')}
       <button class="btn sm" data-act="addst">+ Add station</button><datalist id="grpl">${['INF','OF','C','P','Group 1','Group 2','Group 3',...(curPlan()?curPlan().groups.map(g=>g.name):[])].map(x=>`<option value="${esc(x)}">`).join('')}</datalist></div>
     <div class="mt"><label class="f">Files & pictures</label>
-      ${(draft.files||[]).map((f,i)=>`<div class="row" style="gap:8px;margin:6px 0">${f.k==='image'?`<img src="${esc(f.u)}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:6px">`:'<span class="pill">'+(f.k==='link'?'Link':'File')+'</span>'}<span class="grow" style="word-break:break-all;font-size:14px">${esc(f.n)}</span><button class="btn sm" data-act="rmfile" data-id="${i}" aria-label="Remove ${esc(f.n)}">✕</button></div>`).join('')}
+      ${(draft.files||[]).map((f,i)=>`<div class="row" style="gap:8px;margin:6px 0">${f.k==='image'?`<img src="${esc(imgSrc(f.u))}" data-u="${esc(f.u)}" onerror="imgErr(this)" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:6px">`:'<span class="pill">'+(f.k==='link'?'Link':'File')+'</span>'}<span class="grow" style="word-break:break-all;font-size:14px">${esc(f.n)}</span><button class="btn sm" data-act="rmfile" data-id="${i}" aria-label="Remove ${esc(f.n)}">✕</button></div>`).join('')}
       <div class="grid2"><button class="btn sm" data-act="upfile">+ Upload picture / file</button><button class="btn sm" data-act="linkfile">+ Add link</button></div>
       <div id="lnkrow" style="display:none" class="mt"><input class="in" id="lnku" type="url" placeholder="Paste a link (Drive, YouTube…)"><input class="in mt" id="lnkn" placeholder="Name (optional)"><button class="btn sm gold full mt" data-act="addlink">Add link</button></div>
       <input type="file" id="bfile" multiple style="display:none">
