@@ -251,7 +251,7 @@ function seed(){
   return {team:'gcc',plans,templates,drills};
 }
 function load(){ try{const r=localStorage.getItem('practiceplus_v1'); if(r) return JSON.parse(r);}catch(e){} return seed(); }
-let RO=false, ACCT=null, TEAMLIST=null;
+let RO=false, ACCT=null, TEAMLIST=null, PROGS=null, PROGERR=false, teamTab='players', progId=null, pdraft=null;
 function save(){ try{localStorage.setItem('practiceplus_v1',JSON.stringify(S));}catch(e){} if(window.PP_push) window.PP_push(); }
 S=load();
 function defGroups(start){return [{id:uid(),name:'Infield',start:start||'15:00',blocks:[]},{id:uid(),name:'Outfield',start:start||'15:00',blocks:[]}];}
@@ -451,6 +451,17 @@ if(!S.plyoV1){
 }
 if(!S.cancelV1){ const X=['2026-11-11','2026-11-12','2026-11-13']; S.plans=S.plans.filter(p=>!X.includes(p.date)); S.cancelV1=true; }
 if(!S.sbPoolV1){ if(!S.plans.some(p=>p.team==='muck'&&p.date==='2026-11-12')) S.plans.push({id:uid(),team:'muck',date:'2026-11-12',start:'12:30',location:'',focus:'Softball pool 12:30 (practice canceled)',notes:'',gear:'',quote:'',blocks:[{id:uid(),name:'Pool — Softball',cat:'cond',min:60,stations:[],notes:'Pool workout at 12:30'}],groups:[]}); S.sbPoolV1=true; }
+if(!S.liftV1){ const D='2026-11-12';
+  if(!S.plans.some(p=>p.team==='gcc'&&p.date===D)){
+    const tpl=S.templates.find(t=>t.name==='Baseball Tue/Thu'), cp=b=>b?{...JSON.parse(JSON.stringify(b)),id:uid()}:null;
+    const pg=tpl&&(tpl.groups||[]).find(g=>g.name==='Pitchers');
+    const pl=cp(pg&&pg.blocks.find(b=>b.cat==='cond'))||{id:uid(),name:'Lift',cat:'cond',min:75,stations:[],notes:''};
+    const ppl=cp(tpl&&tpl.blocks.find(b=>b.cat==='cond'))||{id:uid(),name:'Lift (position players)',cat:'cond',min:75,stations:[],notes:''};
+    pl.name='Pitchers lift'; pl.min=75; ppl.name='Position players lift'; ppl.min=75;
+    S.plans.push({id:uid(),team:'gcc',date:D,start:'18:00',location:'',focus:'Lifts only (practice canceled) · Pitchers 3:15–4:30 · Position players 6:00–7:15',notes:'',gear:'',quote:'',blocks:[ppl],
+      groups:[{id:uid(),name:'Pitchers',start:'15:15',blocks:[pl]}]}); }
+  S.liftV1=true; }
+
 save();
 
 function toM(t){const[h,m]=(t||'15:00').split(':').map(Number);return h*60+m;}
@@ -476,7 +487,7 @@ function renderTop(){
     cal:'<path d="M4 6h16v14H4z M4 10h16 M8 3v5 M16 3v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
     videos:'<path d="M3 6h13v12H3z M16 10l5-3v10l-5-3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
     templates:'<path d="M4 4h16v6H4z M4 14h7v6H4z M14 14h6v6h-6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'};
-  const active = view==='edit'||view==='card'?backTo:view==='team'?'cal':view;
+  const active = view==='edit'||view==='card'?backTo:view==='team'||view==='prog'?'cal':view;
   document.getElementById('nav').innerHTML=[['cal','Calendar'],['plans','Plans'],['library','Drills'],['videos','Videos/Thoughts'],['templates','Templates']].filter(x=>!(RO&&x[0]==='templates')).map(([k,l])=>
     `<button class="${active===k?'on':''}" data-act="nav" data-id="${k}"><svg viewBox="0 0 24 24">${ic[k]}</svg>${l}</button>`).join('');
 }
@@ -522,20 +533,75 @@ function focusHTML(b){const L=(b.focus||'').split('\n').map(x=>x.trim()).filter(
   const F=b.files||[]; if(F.length){ h+=`<div class="bfiles" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0">${F.map(f=>f.k==='image'?`<a href="${esc(f.u)}" target="_blank" rel="noopener" data-stop="1"><img src="${esc(f.u)}" alt="${esc(f.n)}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid rgba(128,128,128,.35)"></a>`:`<a href="${esc(f.u)}" target="_blank" rel="noopener" data-stop="1" style="display:inline-flex;align-items:center;padding:6px 12px;border-radius:999px;border:1px solid rgba(128,128,128,.45);font-size:13px;color:inherit;text-decoration:none;align-self:center">📎 ${esc(f.n)}</a>`).join('')}</div>`; }
   return h;}
 function acctBar(){
-  return `<div class="row mt" style="gap:8px;flex-wrap:wrap"><span class="muted small grow">Signed in as ${esc(ACCT.email)} · ${ACCT.role==='coach'?'Coach (can edit)':'Player (view only)'}</span>${ACCT.role==='coach'?`<button class="btn sm" data-act="teamview">Team accounts</button>`:''}<button class="btn sm" data-act="signout">Sign out</button></div>`;
+  return `<div class="row mt" style="gap:8px;flex-wrap:wrap"><span class="muted small grow">Signed in as ${esc(ACCT.email)} · ${ACCT.role==='coach'?'Coach (can edit)':'Player (view only)'}</span>${ACCT.role==='coach'?`<button class="btn sm" data-act="teamview">Players & programs</button>`:''}<button class="btn sm" data-act="signout">Sign out</button></div>`;
+}
+function pName(m){return m&&m.name?m.name:(m?m.email:'');}
+function teamName(id){const t=TEAMS.find(x=>x.id===id);return t?t.name:'';}
+function progFilesHTML(F){F=F||[]; if(!F.length) return '';
+  return `<div style="display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px;margin:10px 0">${F.map(f=>f.k==='image'?`<a href="${esc(f.u)}" target="_blank" rel="noopener" data-stop="1"><img src="${esc(f.u)}" alt="${esc(f.n)}" style="width:96px;height:96px;object-fit:cover;border-radius:8px;border:1px solid rgba(128,128,128,.35)"></a>`:`<a href="${esc(f.u)}" target="_blank" rel="noopener" data-stop="1" style="display:inline-flex;align-items:center;padding:8px 14px;border-radius:999px;border:1px solid rgba(128,128,128,.45);font-size:14px;color:inherit;text-decoration:none">${f.k==='link'?'🔗':'📄'} ${esc(f.n)}</a>`).join('')}</div>`;}
+function myProgsCard(){
+  if(!RO||!PROGS||!PROGS.length) return '';
+  return `<div class="vgh">My programs</div>`+PROGS.map(g=>`<div class="card" data-act="prog" data-id="${esc(g.id)}" style="cursor:pointer"><div class="row"><b class="grow">${esc(g.name)}</b><span class="muted">›</span></div>${g.body?`<div class="muted small" style="margin-top:4px">${esc(g.body.split('\n')[0].slice(0,90))}</div>`:''}</div>`).join('');
+}
+function vProg(){
+  const g=(PROGS||[]).find(x=>x.id===progId);
+  if(!g) return `<button class="btn sm" data-act="progback">‹ Back</button><div class="empty">That program isn’t available.</div>`;
+  const L=(g.body||'').split('\n');
+  const who=!RO?`<p class="muted small">Assigned to: ${(g.assigned||[]).map(e=>esc(pName((TEAMLIST||[]).find(m=>m.email===e)||{email:e}))).join(', ')||'nobody yet'}</p>`:'';
+  return `<button class="btn sm" data-act="progback">‹ Back</button><h2 style="margin-top:12px">${esc(g.name)}</h2>${who}
+  <div class="card" style="white-space:pre-wrap;line-height:1.5">${L.join('\n').trim()?esc(g.body):'<span class="muted">No details written.</span>'}</div>${progFilesHTML(g.files)}
+  ${!RO?`<button class="btn gold full mt" data-act="progedit" data-id="${esc(g.id)}">Edit program</button>`:''}
+  ${g.updated_at?`<p class="muted small mt">Updated ${new Date(g.updated_at).toLocaleDateString(undefined,{month:'short',day:'numeric'})}</p>`:''}`;
 }
 function vTeam(){
-  let h=`<h2>Team accounts</h2><p class="muted small">Add the email each person will sign in with. Coaches can edit everything. Players can only view. After you add someone, they open the app link and tap <b>Create an account</b> with that email.</p>
+  let h=`<h2>Players & programs</h2><div class="chips mt" style="margin-bottom:8px"><button class="${teamTab==='players'?'on':''}" data-act="teamtab" data-id="players">Players</button><button class="${teamTab==='programs'?'on':''}" data-act="teamtab" data-id="programs">Programs</button></div>`;
+  if(PROGERR) h+=`<div class="card" style="border-color:var(--gold)"><b>One setup step left</b><div class="muted small" style="margin-top:4px">Run <b>supabase-programs.sql</b> in Supabase (SQL Editor → New query → paste → Run) to turn on profiles and programs.</div></div>`;
+  if(teamTab==='programs'){
+    h+=`<p class="muted small">Write a program once, attach files or links, and pick which players get it. Players only see the programs assigned to them.</p><button class="btn gold full" data-act="progadd">+ New program</button>`;
+    if(PROGS===null) return h+'<div class="empty">Loading…</div>';
+    if(!PROGS.length) return h+'<div class="empty">No programs yet. Example: a Return to Throw program for one pitcher.</div>';
+    return h+'<div class="mt">'+PROGS.map(g=>`<div class="card" data-act="prog" data-id="${esc(g.id)}" style="cursor:pointer"><div class="row"><b class="grow">${esc(g.name)}</b><span class="pill">${(g.assigned||[]).length} player${(g.assigned||[]).length===1?'':'s'}</span></div>${(g.assigned||[]).length?`<div class="muted small" style="margin-top:4px">${(g.assigned||[]).map(e=>esc(pName((TEAMLIST||[]).find(m=>m.email===e)||{email:e}))).join(', ')}</div>`:''}</div>`).join('')+'</div>';
+  }
+  h+=`<p class="muted small">Add the email each person will sign in with. Coaches can edit everything. Players can only view, and they see any programs you assign them. Tap a name to edit the profile.</p>
   <div class="card"><label class="small muted" for="tm-e">Email</label><input class="in" id="tm-e" type="email" placeholder="name@email.com" autocomplete="off">
+  <label class="small muted" for="tm-n" style="display:block;margin-top:8px">Name (optional)</label><input class="in" id="tm-n" placeholder="First Last" autocomplete="off">
   <label class="small muted" for="tm-r" style="display:block;margin-top:8px">Role</label><select class="in" id="tm-r"><option value="player">Player (view only)</option><option value="coach">Coach (can edit)</option></select>
   <button class="btn gold full mt" data-act="addmember">Add to team</button></div>`;
   if(TEAMLIST===null) return h+'<div class="empty">Loading…</div>';
   const cs=TEAMLIST.filter(m=>m.role==='coach'), ps=TEAMLIST.filter(m=>m.role!=='coach');
-  const row=m=>`<div class="row" style="padding:10px 14px;border-top:1px solid var(--line,#22314f);gap:8px"><span class="grow" style="word-break:break-all">${esc(m.email)}</span>${m.email===ACCT.email?'<span class="pill">You</span>':`<button class="btn sm" data-act="setrole" data-id="${esc(m.email)}|${m.role==='coach'?'player':'coach'}">Make ${m.role==='coach'?'player':'coach'}</button><button class="btn sm" data-act="rmmember" data-id="${esc(m.email)}" aria-label="Remove">✕</button>`}</div>`;
-  h+=`<div class="vgh">Coaches (${cs.length})</div><div class="card" style="padding:0">${cs.map(row).join('')||'<div class="muted small" style="padding:12px">None</div>'}</div>`;
+  const nprog=e=>(PROGS||[]).filter(g=>(g.assigned||[]).includes(e)).length;
+  const row=m=>`<div class="row" data-act="memedit" data-id="${esc(m.email)}" style="padding:10px 14px;border-top:1px solid var(--line,#22314f);gap:8px;cursor:pointer"><div class="grow" style="min-width:0"><div style="word-break:break-all"><b>${esc(pName(m))}</b>${m.email===ACCT.email?' <span class="pill">You</span>':''}</div><div class="muted small" style="word-break:break-all">${[m.name?m.email:'',m.pos||'',teamName(m.team)].filter(Boolean).map(esc).join(' · ')}</div></div>${m.role!=='coach'&&nprog(m.email)?`<span class="pill">${nprog(m.email)} program${nprog(m.email)===1?'':'s'}</span>`:''}<span class="muted">›</span></div>`;
   h+=`<div class="vgh">Players (${ps.length})</div><div class="card" style="padding:0">${ps.map(row).join('')||'<div class="muted small" style="padding:12px">No players yet</div>'}</div>`;
+  h+=`<div class="vgh">Coaches (${cs.length})</div><div class="card" style="padding:0">${cs.map(row).join('')||'<div class="muted small" style="padding:12px">None</div>'}</div>`;
   return h;
 }
+function memSheet(m){
+  const mine=(PROGS||[]).filter(g=>(g.assigned||[]).includes(m.email)).map(g=>g.id);
+  sheet(`<h3>${esc(pName(m))}</h3><p class="muted small" style="margin-top:-6px;word-break:break-all">${esc(m.email)}</p>
+  <label class="f" for="me-n">Name</label><input class="in" id="me-n" value="${esc(m.name||'')}" placeholder="First Last">
+  <div class="grid2 mt"><div><label class="f" for="me-p">Position</label><input class="in" id="me-p" value="${esc(m.pos||'')}" placeholder="e.g. RHP, SS"></div>
+  <div><label class="f" for="me-t">Team</label><select class="in" id="me-t"><option value="">—</option>${TEAMS.map(t=>`<option value="${t.id}" ${m.team===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}</select></div></div>
+  ${m.email!==ACCT.email?`<div class="mt"><label class="f" for="me-r">Role</label><select class="in" id="me-r"><option value="player" ${m.role!=='coach'?'selected':''}>Player (view only)</option><option value="coach" ${m.role==='coach'?'selected':''}>Coach (can edit)</option></select></div>`:''}
+  ${PROGS&&PROGS.length?`<div class="mt"><label class="f">Programs</label>${PROGS.map(g=>`<label class="row" style="gap:10px;padding:8px 0"><input type="checkbox" class="me-pg" value="${esc(g.id)}" ${mine.includes(g.id)?'checked':''} style="width:20px;height:20px"><span>${esc(g.name)}</span></label>`).join('')}</div>`:(PROGERR?'':`<p class="muted small mt">No programs yet. Make one under the Programs tab, then assign it here.</p>`)}
+  <div class="grid2 mt2"><button class="btn" data-act="close">Cancel</button><button class="btn gold" data-act="memsave" data-id="${esc(m.email)}">Save</button></div>
+  ${m.email!==ACCT.email?`<button class="btn danger full mt" data-act="rmmember" data-id="${esc(m.email)}">Remove from team</button>`:''}`);
+}
+function progSheet(){
+  const d=pdraft, players=(TEAMLIST||[]).filter(m=>m.role!=='coach');
+  sheet(`<h3>${d._isNew?'New program':'Edit program'}</h3>
+  <label class="f" for="pg-n">Program name</label><input class="in" id="pg-n" value="${esc(d.name)}" placeholder="e.g. Return to Throw – Phase 1">
+  <div class="mt"><label class="f" for="pg-b">Details</label><textarea class="in" id="pg-b" rows="8" placeholder="Week 1: 45 ft × 25 throws, 3 days&#10;Week 2: 60 ft × 25 throws…">${esc(d.body||'')}</textarea></div>
+  <div class="mt"><label class="f">Files & pictures</label>
+    ${d.files.map((f,i)=>`<div class="row" style="gap:8px;margin:6px 0">${f.k==='image'?`<img src="${esc(f.u)}" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:6px">`:'<span class="pill">'+(f.k==='link'?'Link':'File')+'</span>'}<span class="grow" style="word-break:break-all;font-size:14px">${esc(f.n)}</span><button class="btn sm" data-act="prmfile" data-id="${i}" aria-label="Remove">✕</button></div>`).join('')}
+    <div class="grid2"><button class="btn sm" data-act="pupfile">+ Upload picture / file</button><button class="btn sm" data-act="plinkfile">+ Add link</button></div>
+    <div id="plnkrow" style="display:none" class="mt"><input class="in" id="plnku" type="url" placeholder="Paste a link (Drive, YouTube…)"><input class="in mt" id="plnkn" placeholder="Name (optional)"><button class="btn sm gold full mt" data-act="paddlink">Add link</button></div>
+    <input type="file" id="pfile" multiple style="display:none"><div id="pupst" class="muted small"></div></div>
+  <div class="mt"><label class="f">Assign to</label>${players.length?players.map(m=>`<label class="row" style="gap:10px;padding:8px 0"><input type="checkbox" class="pg-a" value="${esc(m.email)}" ${d.assigned.includes(m.email)?'checked':''} style="width:20px;height:20px"><span>${esc(pName(m))}${m.pos?` <span class="muted small">· ${esc(m.pos)}</span>`:''}</span></label>`).join(''):'<p class="muted small">Add players on the Players tab first.</p>'}</div>
+  <div class="grid2 mt2"><button class="btn" data-act="close">Cancel</button><button class="btn gold" data-act="progsave">Save</button></div>
+  ${!d._isNew?`<button class="btn danger full mt" data-act="progdel">Delete program</button>`:''}`);
+}
+function syncP(){const g=id=>document.getElementById(id); if(!g('pg-n')) return;
+  pdraft.name=g('pg-n').value; pdraft.body=g('pg-b').value; pdraft.assigned=[...layer.querySelectorAll('.pg-a:checked')].map(x=>x.value);}
 function render(){
   renderTop();
   const app=document.getElementById('app');
@@ -547,7 +613,8 @@ function render(){
   else if(view==='cal') app.innerHTML=vCal();
   else if(view==='videos') app.innerHTML=vVideos();
   else if(view==='team') app.innerHTML=vTeam();
-  if(ACCT&&(view==='cal'||view==='team')) app.insertAdjacentHTML('afterbegin',acctBar());
+  else if(view==='prog') app.innerHTML=vProg();
+  if(ACCT&&(view==='cal'||view==='team')) app.insertAdjacentHTML('afterbegin',acctBar()+(view==='cal'?myProgsCard():''));
 }
 
 function vPlans(){
@@ -828,14 +895,32 @@ document.addEventListener('click',e=>{ if(e.target.closest&&e.target.closest('[d
   const el=e.target.closest('[data-act]'); if(!el) return;
   const a=el.dataset.act, id=el.dataset.id, p=curPlan(); const o=p&&(view==='edit'||view==='library')?sched(p).obj:null;
   if(a==='closebg'){ if(e.target===el) closeSheet(); return; }
-  if(RO){ const ok=['close','team','nav','calmode','caltoday','calprev','calnext','gotoweek','copy','libcat','vidtab','expd','sched','signout'];
+  if(RO){ const ok=['close','team','nav','calmode','caltoday','calprev','calnext','gotoweek','copy','libcat','vidtab','expd','sched','signout','prog','progback'];
     if(a==='open'){ editingId=id; backTo=view==='cal'?'cal':'plans'; view='card'; render(); window.scrollTo(0,0); return; }
     if(a==='back'){ view=backTo; render(); return; }
     if(!ok.includes(a)) return; }
   if(a==='signout'){ window.PP_signOut&&window.PP_signOut(); return; }
-  if(a==='teamview'){ view='team'; render(); window.PP_loadTeam&&window.PP_loadTeam(); return; }
-  if(a==='addmember'){ const em=(document.getElementById('tm-e').value||'').trim().toLowerCase(), r=document.getElementById('tm-r').value; if(!/^\S+@\S+\.\S+$/.test(em)){toast('Enter an email');return;} window.PP_addMember(em,r); return; }
+  if(a==='teamview'){ view='team'; render(); window.PP_loadTeam&&window.PP_loadTeam(); window.PP_loadPrograms&&window.PP_loadPrograms(); return; }
+  if(a==='prog'){ progId=id; view='prog'; render(); window.scrollTo(0,0); return; }
+  if(a==='progback'){ view=RO?'cal':'team'; render(); return; }
+  if(a==='addmember'){ const em=(document.getElementById('tm-e').value||'').trim().toLowerCase(), r=document.getElementById('tm-r').value, nm=(document.getElementById('tm-n').value||'').trim(); if(!/^\S+@\S+\.\S+$/.test(em)){toast('Enter an email');return;} window.PP_addMember(em,r,nm?{name:nm}:null); return; }
   if(a==='rmmember'){ confirmSheet('Remove '+id+' from the team?',()=>window.PP_rmMember(id)); return; }
+  if(a==='teamtab'){ teamTab=id; render(); return; }
+  if(a==='memedit'){ const m=(TEAMLIST||[]).find(x=>x.email===id); if(m) memSheet(m); return; }
+  if(a==='memsave'){ const g=x=>document.getElementById(x); const m=(TEAMLIST||[]).find(x=>x.email===id)||{email:id,role:'player'};
+    const role=g('me-r')?g('me-r').value:m.role, want=[...layer.querySelectorAll('.me-pg:checked')].map(x=>x.value);
+    const prof={name:g('me-n')?g('me-n').value.trim()||null:m.name,pos:g('me-p')?g('me-p').value.trim()||null:m.pos,team:g('me-t')?g('me-t').value||null:m.team};
+    closeSheet(); window.PP_saveMember(id,role,prof,want); return; }
+  if(a==='progadd'){ pdraft={id:'pg'+uid(),name:'',body:'',files:[],assigned:[],_isNew:true}; progSheet(); return; }
+  if(a==='progedit'){ const g=(PROGS||[]).find(x=>x.id===id); if(!g) return; pdraft={...JSON.parse(JSON.stringify(g)),files:g.files||[],assigned:g.assigned||[],_isNew:false}; progSheet(); return; }
+  if(a==='progsave'){ syncP(); if(!pdraft.name.trim()){toast('Give the program a name');return;} const {_isNew,...g}=pdraft; closeSheet(); window.PP_saveProgram(g); return; }
+  if(a==='progdel'){ const pid=pdraft.id; confirmSheet('Delete this program? Players will no longer see it.',()=>window.PP_delProgram(pid)); return; }
+  if(a==='prmfile'){ syncP(); pdraft.files.splice(+id,1); progSheet(); return; }
+  if(a==='plinkfile'){ const r=document.getElementById('plnkrow'); if(r){ r.style.display='block'; document.getElementById('plnku').focus(); } return; }
+  if(a==='paddlink'){ const u=document.getElementById('plnku').value.trim(); if(!/^https?:\/\//i.test(u)){toast('Paste a link that starts with https://');return;}
+    syncP(); pdraft.files.push({n:document.getElementById('plnkn').value.trim()||u.replace(/^https?:\/\//,'').slice(0,40),u,k:/\.(png|jpe?g|gif|webp|heic)(\?|$)/i.test(u)?'image':'link'}); progSheet(); return; }
+  if(a==='pupfile'){ const inp=document.getElementById('pfile'); inp.onchange=async()=>{ const fs=[...inp.files]; if(!fs.length) return; syncP(); const st=document.getElementById('pupst');
+      for(const f of fs){ if(st) st.textContent='Uploading '+f.name+'…'; try{ pdraft.files.push(await window.PP_upload(f)); }catch(e){ toast(e.message||'Upload failed'); } } progSheet(); }; inp.click(); return; }
   if(a==='setrole'){ const [em,r]=id.split('|'); window.PP_addMember(em,r); return; }
   switch(a){
     case 'close': closeSheet(); break;
@@ -988,9 +1073,25 @@ window.PP_upload=async f=>{ if(RO) throw new Error('Only coaches can upload');
   const t=await tok(); const r=await fetch(C.url+'/storage/v1/object/pp-files/'+path,{method:'POST',headers:{apikey:C.key,Authorization:'Bearer '+t,'Content-Type':g.type||'application/octet-stream','x-upsert':'false'},body:g});
   if(!r.ok){ let m=''; try{m=(await r.json()).message||'';}catch(e){} throw new Error(/bucket/i.test(m)?'File storage isn’t set up yet (run the storage setup in Supabase).':'Upload failed'+(m?': '+m:'')); }
   return {n:f.name,u:C.url+'/storage/v1/object/public/pp-files/'+path,k:/^image\//.test(g.type)?'image':'file'}; };
-window.PP_loadTeam=async()=>{ try{ TEAMLIST=await rest('GET','pp_members?select=email,role&order=role.asc,email.asc')||[]; }catch(e){ TEAMLIST=[]; toast('Couldn’t load the team list'); } if(view==='team') render(); };
-window.PP_addMember=async(em,r)=>{ try{ await rest('POST','pp_members?on_conflict=email',{email:em,role:r},{Prefer:'resolution=merge-duplicates,return=minimal'}); toast(em+' is a '+r); await PP_loadTeam(); }catch(e){ toast('Couldn’t save. Try again.'); } };
-window.PP_rmMember=async em=>{ try{ await rest('DELETE','pp_members?email=eq.'+encodeURIComponent(em),null,{Prefer:'return=minimal'}); await PP_loadTeam(); }catch(e){ toast('Couldn’t remove. Try again.'); } };
+let EXT=true;
+window.PP_loadTeam=async()=>{ try{ try{ TEAMLIST=await rest('GET','pp_members?select=email,role,name,pos,team&order=role.asc,email.asc')||[]; EXT=true; }catch(e){ TEAMLIST=await rest('GET','pp_members?select=email,role&order=role.asc,email.asc')||[]; EXT=false; PROGERR=true; } }catch(e){ TEAMLIST=[]; toast('Couldn’t load the team list'); }
+  TEAMLIST.sort((x,y)=>(x.role===y.role?0:x.role==='player'?-1:1)||pName(x).localeCompare(pName(y))); if(view==='team'||view==='prog') render(); };
+window.PP_loadPrograms=async()=>{ try{ const a=await rest('GET','pp_programs?select=*&order=updated_at.desc')||[]; const ch=JSON.stringify(a)!==JSON.stringify(PROGS); PROGS=a; if(ACCT&&ACCT.role==='coach') PROGERR=!EXT; if(ch&&!busyUI()&&(view==='team'||view==='prog'||view==='cal')){ const y=window.scrollY; render(); window.scrollTo(0,y);} }catch(e){ if(PROGS===null) PROGS=[]; if(ACCT&&ACCT.role==='coach'){ PROGERR=true; if(view==='team') render(); } } };
+window.PP_addMember=async(em,r,extra)=>{ try{ const row={email:em,role:r}; if(extra&&EXT) Object.assign(row,extra); await rest('POST','pp_members?on_conflict=email',row,{Prefer:'resolution=merge-duplicates,return=minimal'}); toast((extra&&extra.name)||em+' added'); await PP_loadTeam(); }catch(e){ toast('Couldn’t save. Try again.'); } };
+window.PP_saveMember=async(em,role,prof,want)=>{ try{
+    const row={role}; if(EXT) Object.assign(row,prof);
+    await rest('PATCH','pp_members?email=eq.'+encodeURIComponent(em),row,{Prefer:'return=minimal'});
+    for(const g of (PROGS||[])){ const has=(g.assigned||[]).includes(em), w=want.includes(g.id); if(has===w) continue;
+      const as=w?[...(g.assigned||[]),em]:(g.assigned||[]).filter(x=>x!==em);
+      await rest('PATCH','pp_programs?id=eq.'+encodeURIComponent(g.id),{assigned:as,updated_at:new Date().toISOString()},{Prefer:'return=minimal'}); }
+    toast('Saved'); await PP_loadTeam(); await PP_loadPrograms(); render(); }catch(e){ toast('Couldn’t save. Try again.'); } };
+window.PP_saveProgram=async g=>{ try{ const row={id:g.id,name:g.name.trim(),body:g.body||'',files:g.files||[],assigned:g.assigned||[],created_by:g.created_by||ACCT.email,updated_at:new Date().toISOString()};
+    await rest('POST','pp_programs?on_conflict=id',row,{Prefer:'resolution=merge-duplicates,return=minimal'}); toast('Program saved'); await PP_loadPrograms(); render(); }
+  catch(e){ toast(/404|400/.test(e.message)?'Run supabase-programs.sql in Supabase first.':'Couldn’t save. Try again.'); } };
+window.PP_delProgram=async id=>{ try{ await rest('DELETE','pp_programs?id=eq.'+encodeURIComponent(id),null,{Prefer:'return=minimal'}); if(view==='prog') view='team'; await PP_loadPrograms(); render(); }catch(e){ toast('Couldn’t delete. Try again.'); } };
+window.PP_rmMember=async em=>{ try{ await rest('DELETE','pp_members?email=eq.'+encodeURIComponent(em),null,{Prefer:'return=minimal'});
+    for(const g of (PROGS||[]).filter(g=>(g.assigned||[]).includes(em))) await rest('PATCH','pp_programs?id=eq.'+encodeURIComponent(g.id),{assigned:g.assigned.filter(x=>x!==em)},{Prefer:'return=minimal'}).catch(()=>{});
+    await PP_loadTeam(); await PP_loadPrograms(); }catch(e){ toast('Couldn’t remove. Try again.'); } };
 
 async function start(){
   if(!sess){gate('','in');return;}
@@ -1001,8 +1102,9 @@ async function start(){
   ACCT={email:sess.email,role}; RO=role!=='coach';
   close(); if(RO&&(view==='edit'||view==='templates'))view='cal'; render();
   try{ await pull(true); }catch(e){}
-  setInterval(()=>{ if(!document.hidden) pull(false).catch(()=>{}); }, RO?20000:45000);
-  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) pull(false).catch(()=>{}); });
+  PP_loadPrograms(); if(!RO) PP_loadTeam();
+  setInterval(()=>{ if(!document.hidden){ pull(false).catch(()=>{}); PP_loadPrograms(); } }, RO?20000:45000);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden){ pull(false).catch(()=>{}); PP_loadPrograms(); } });
 }
 start();
 })();
