@@ -424,6 +424,31 @@ if(!S.schedV2){
   pos.forEach(d=>pool('gcc',d,'Position players')); sbp.forEach(d=>pool('muck',d,'Softball'));
   S.schedV2=true;
 }
+if(!S.plyoV1){
+  const PS='Plyo & stretch';
+  const fixFirst=bl=>{ if(bl&&bl.length&&bl[0].cat==='warm'){ bl[0].name=PS; } };
+  ['Baseball Monday','Baseball Wednesday'].forEach(n=>{ const t=S.templates.find(x=>x.name===n); if(t) fixFirst(t.blocks); });
+  const fri=S.templates.find(x=>x.name==='Baseball Friday');
+  if(fri&&fri.blocks[0]&&fri.blocks[0].cat==='warm'&&fri.blocks[0].min!==30){
+    const d=30-fri.blocks[0].min; fri.blocks[0].name=PS; fri.blocks[0].min=30;
+    const ind=fri.blocks.find(b=>b.cat==='indy'); if(ind) ind.min=Math.max(5,ind.min-d);
+    (fri.groups||[]).forEach(g=>{ g.start=fmt24(toM(g.start)+d); let left=d; [...g.blocks].reverse().forEach(b=>{ if(left>0&&!['throw','warm'].includes(b.cat)){ const c=Math.min(left,b.min-5); b.min-=c; left-=c; } }); });
+  } else if(fri) fixFirst(fri.blocks);
+  S.rules.forEach(r=>{ if([3,5].includes(r.dow)){ if(r.team==='gcc'){ r.trim=0; r.start='15:00'; } if(r.team==='muck'){ r.trim=60; r.start='17:00'; r.teamOnly=true; } } });
+  const from=todayISO(), to='2026-12-19', dow=d=>parseD(d).getDay();
+  S.plans=S.plans.filter(p=>!(p.date>=from&&p.date<=to&&[3,5].includes(dow(p.date))&&p.focus!=='Buffalo Bills Game'));
+  let ws=weekStart(from); while(ws<=to){ fillWeek(ws,from); ws=addDays(ws,7); }
+  const clear=['2026-11-22','2026-11-26','2026-11-27','2026-11-28','2026-12-19'];
+  S.plans=S.plans.filter(p=>!(clear.includes(p.date)&&p.focus!=='Buffalo Bills Game'));
+  S.plans.forEach(p=>{ if(p.date>=from&&dow(p.date)===1) fixFirst(p.blocks); });
+  const SB=(n,c,m,nt='')=>({id:uid(),name:n,cat:c,min:m,stations:[],notes:nt});
+  S.plans.forEach(p=>{ if(p.team!=='muck'||p.date<from||p.focus==='Buffalo Bills Game') return; const w=dow(p.date);
+    if(w===3) p.blocks=[SB(PS,'warm',30),SB('Baserunning','br',15),SB('Bunt scrimmage','team',30),SB('Team defense','def',15,'Details to come')];
+    if(w===5) p.blocks=[SB(PS,'warm',30),SB('Team fielding','def',15,'Details to come'),SB('Team hitting','hit',15,'Details to come'),SB('Competition','team',30)]; });
+  S.plyoV1=true;
+}
+if(!S.cancelV1){ const X=['2026-11-11','2026-11-12','2026-11-13']; S.plans=S.plans.filter(p=>!X.includes(p.date)); S.cancelV1=true; }
+if(!S.sbPoolV1){ if(!S.plans.some(p=>p.team==='muck'&&p.date==='2026-11-12')) S.plans.push({id:uid(),team:'muck',date:'2026-11-12',start:'12:30',location:'',focus:'Softball pool 12:30 (practice canceled)',notes:'',gear:'',quote:'',blocks:[{id:uid(),name:'Pool — Softball',cat:'cond',min:60,stations:[],notes:'Pool workout at 12:30'}],groups:[]}); S.sbPoolV1=true; }
 save();
 
 function toM(t){const[h,m]=(t||'15:00').split(':').map(Number);return h*60+m;}
