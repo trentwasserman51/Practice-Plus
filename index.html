@@ -61,6 +61,8 @@ textarea.in{min-height:64px;resize:vertical}
 .blk .time{font-family:"Barlow Condensed",sans-serif;font-weight:700;font-size:17px;color:var(--gold2)}
 .blk .nm{font-weight:700}
 .blk .meta{font-size:12.5px;color:var(--muted);margin-top:2px}
+.bfocus{margin:6px 0 2px;padding:6px 10px;border-left:3px solid var(--gold);background:rgba(242,183,5,.07);border-radius:6px;font-size:13.5px;line-height:1.45}
+.bfocus div{margin:1px 0}
 .stations{margin-top:6px;font-size:13px}
 .stations div{padding:3px 0;border-top:1px dashed var(--line)}
 .blk .acts{display:flex;flex-direction:column;border-left:1px solid var(--line)}
@@ -515,6 +517,7 @@ function vtabSheet(t){
   const d=document.getElementById('vtd');
   if(d) d.onclick=()=>{ if(S.vids.length<2){toast('Keep at least one tab');return;} confirmSheet('Delete the '+t.name+' tab?',()=>{S.vids.splice(S.vids.indexOf(t),1); vidTab=S.vids[0].id; save(); render();}); };
 }
+function focusHTML(b){const L=(b.focus||'').split('\n').map(x=>x.trim()).filter(Boolean);return L.length?`<div class="bfocus">${L.map(x=>`<div>${esc(x)}</div>`).join('')}</div>`:'';}
 function acctBar(){
   return `<div class="row mt" style="gap:8px;flex-wrap:wrap"><span class="muted small grow">Signed in as ${esc(ACCT.email)} · ${ACCT.role==='coach'?'Coach (can edit)':'Player (view only)'}</span>${ACCT.role==='coach'?`<button class="btn sm" data-act="teamview">Team accounts</button>`:''}<button class="btn sm" data-act="signout">Sign out</button></div>`;
 }
@@ -583,7 +586,7 @@ function vEdit(){
     return `<div class="blk"><div class="stripe" style="background:${c.color}"></div>
     <div class="body" data-act="editblk" data-id="${b.id}">
       <div class="row"><span class="time">${fmt(s)}–${fmt(clock)}</span><span class="grow"></span><span class="pill">${b.min}m</span></div>
-      <div class="nm">${esc(b.name)}</div><div class="meta">${c.label}${b.notes?' · '+esc(b.notes):''}</div>${b.video?`<a class="watch" href="${esc(b.video)}" target="_blank" rel="noopener" data-stop="1">▶ Video</a>`:''}
+      <div class="nm">${esc(b.name)}</div><div class="meta">${c.label}${b.notes?' · '+esc(b.notes):''}</div>${focusHTML(b)}${b.video?`<a class="watch" href="${esc(b.video)}" target="_blank" rel="noopener" data-stop="1">▶ Video</a>`:''}
       ${b.stations.length?'<div class="stations">'+b.stations.map(st=>`<div><b>${esc(st.group)}</b> — ${esc(st.drill)}${st.coach?' <span class="muted">('+esc(st.coach)+')</span>':''}</div>`).join('')+'</div>':''}
     </div>
     <div class="acts"><button data-act="up" data-id="${b.id}" ${i===0?'disabled style="opacity:.3"':''} aria-label="Move up">▲</button><button data-act="down" data-id="${b.id}" ${i===sc.blocks.length-1?'disabled style="opacity:.3"':''} aria-label="Move down">▼</button></div></div>`;}).join('');
@@ -600,6 +603,7 @@ function cardText(p){
   const sec=(title,blocks,start)=>{if(!blocks.length)return; let c=toM(start); s+=`\n${title.toUpperCase()}\n`;
     blocks.forEach(b=>{const st=c;c+=+b.min;s+=`${fmt(st)}-${fmt(c)}  ${b.name}\n`;
       b.stations.forEach(x=>s+=`    • ${x.group}: ${x.drill}${x.coach?' ('+x.coach+')':''}\n`);
+      (b.focus||'').split('\n').map(x=>x.trim()).filter(Boolean).forEach(x=>s+=`    - ${x}\n`);
       if(b.notes) s+=`    ${b.notes}\n`;});};
   sec('Team schedule',p.blocks,p.start);
   p.groups.forEach(g=>sec(g.name+' indy',g.blocks,g.start));
@@ -610,7 +614,7 @@ function cardText(p){
 function cardTable(blocks,start,showMin){
   let c=toM(start);
   return `<table>${blocks.map(b=>{const st=c;c+=+b.min;return `<tr><td class="tm" style="border-left:4px solid ${(CATS[b.cat]||CATS.other).color};padding-left:6px">${fmt(st)}${showMin?'':'–'+fmt(c)}</td>
-    <td><b>${esc(b.name)}</b>${b.stations.map(x=>`<div class="sub">• <b>${esc(x.group)}</b>: ${esc(x.drill)}${x.coach?' ('+esc(x.coach)+')':''}</div>`).join('')}${b.notes?`<div class="sub"><i>${esc(b.notes)}</i></div>`:''}</td>
+    <td><b>${esc(b.name)}</b>${focusHTML(b)}${b.stations.map(x=>`<div class="sub">• <b>${esc(x.group)}</b>: ${esc(x.drill)}${x.coach?' ('+esc(x.coach)+')':''}</div>`).join('')}${b.notes?`<div class="sub"><i>${esc(b.notes)}</i></div>`:''}</td>
     ${showMin?`<td class="mn">${b.min}m</td>`:''}</tr>`;}).join('')}</table>`;
 }
 function vCard(){
@@ -733,6 +737,7 @@ function blockSheet(b,isNew){
   draft=JSON.parse(JSON.stringify(b));
   const draw=()=>{sheet(`<h3>${isNew?'Add block':'Edit block'}</h3>
     <label class="f">Block name</label><input class="in" id="bn" value="${esc(draft.name)}" placeholder="e.g. Defensive stations">
+    <div class="mt"><label class="f" for="bfo">Focus / what we're doing</label><textarea class="in" id="bfo" rows="4" placeholder="One per line, e.g.&#10;INF: backhands, DP feeds&#10;OF: low line drives, gap reads">${esc(draft.focus||'')}</textarea></div>
     <div class="mt"><label class="f">Category</label><select class="in" id="bc">${Object.entries(CATS).map(([k,c])=>`<option value="${k}" ${draft.cat===k?'selected':''}>${c.label}</option>`).join('')}</select></div>
     <div class="mt"><label class="f">Minutes</label><div class="stepper"><button data-act="mm" data-id="-5">−5</button><button data-act="mm" data-id="-1">−1</button><div class="v" id="bmv">${draft.min}</div><button data-act="mm" data-id="1">+1</button><button data-act="mm" data-id="5">+5</button></div></div>
     <div class="mt2"><label class="f">Stations / groups (optional)</label>
@@ -746,7 +751,7 @@ function blockSheet(b,isNew){
 function syncDraft(){
   const g=id=>document.getElementById(id);
   if(!g('bn')) return;
-  draft.name=g('bn').value; draft.cat=g('bc').value; draft.notes=g('bno').value;
+  draft.name=g('bn').value; draft.cat=g('bc').value; draft.notes=g('bno').value; draft.focus=g('bfo').value;
   layer.querySelectorAll('[data-st]').forEach(el=>draft.stations[+el.dataset.st][el.dataset.k]=el.value);
 }
 function drillSheet(d,isNew){
