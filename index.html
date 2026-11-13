@@ -228,11 +228,11 @@ const addDays=(s,n)=>{const d=parseD(s);d.setDate(d.getDate()+n);return iso(d);}
 const weekStart=s=>{const d=parseD(s);d.setDate(d.getDate()-((d.getDay()+6)%7));return iso(d);};
 const COACHP={hit:'Sherman',def:'Wass/Manella'};
 const GEARD={1:'Black Shirt, Grey Pants',4:'Black Shirt, Grey Pants',2:'Blue Shirt, Grey Pants',5:'Blue Shirt, Grey Pants',3:'Grey Shirt, Grey Pants',6:'Grey Shirt, Grey Pants'};
-function gearFor(team,date){return team==='gcc'?(GEARD[parseD(date).getDay()]||''):'';}
+function gearFor(team,date){const st=S.settings&&S.settings[team]; if(!st||!st.gear) return ''; return st.gear[parseD(date).getDay()||7]||'';}
 function weekQuote(team,date){const w=weekStart(date);const q=(S.plans||[]).find(x=>x.team===team&&x.quote&&weekStart(x.date)===w);return q?q.quote:'';}
-function presetCoach(b,team){ if(team!=='gcc'||!b) return; if(b.coach===undefined&&COACHP[b.cat]) b.coach=COACHP[b.cat];
-  (b.stations||[]).forEach(x=>{ if(x._p) return; x._p=1; if(!x.coach){ if(/defen|fungo|ground ?ball|fly ?ball/i.test(x.drill||'')) x.coach=COACHP.def; else if(/hit|bp|cage|tee/i.test(x.drill||'')) x.coach=COACHP.hit; } }); }
-function presetAll(){ const t=todayISO(); (S.plans||[]).filter(p=>p.team==='gcc'&&p.date>=t).forEach(p=>[...p.blocks,...(p.groups||[]).flatMap(g=>g.blocks)].forEach(b=>presetCoach(b,'gcc'))); }
+function presetCoach(b,team){ const CP=(S.settings&&S.settings[team]&&S.settings[team].coach)||{}; if(!b||!Object.values(CP).some(Boolean)) return; if(b.coach===undefined&&CP[b.cat]) b.coach=CP[b.cat];
+  (b.stations||[]).forEach(x=>{ if(x._p) return; x._p=1; if(!x.coach){ if(CP.def&&/defen|fungo|ground ?ball|fly ?ball/i.test(x.drill||'')) x.coach=CP.def; else if(CP.hit&&/hit|bp|cage|tee/i.test(x.drill||'')) x.coach=CP.hit; } }); }
+function presetAll(){ const t=todayISO(); (S.plans||[]).filter(p=>p.date>=t).forEach(p=>[...p.blocks,...(p.groups||[]).flatMap(g=>g.blocks)].forEach(b=>presetCoach(b,p.team))); }
 let calWeek=weekStart(todayISO()), calMode='week', calMonth=todayISO().slice(0,7), backTo='plans', newDate=null;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -274,6 +274,10 @@ function load(){ try{const r=localStorage.getItem('practiceplus_v1'); if(r) retu
 let RO=false, ACCT=null, TEAMLIST=null, PROGS=null, PROGERR=false, teamTab='players', progId=null, pdraft=null;
 function save(){ try{presetAll();}catch(e){} try{localStorage.setItem('practiceplus_v1',JSON.stringify(S));}catch(e){} if(window.PP_push) window.PP_push(); }
 S=load();
+if(!S.settingsV1){ S.settings=S.settings||{}; S.settings.gcc={gear:{1:'Black Shirt, Grey Pants',4:'Black Shirt, Grey Pants',2:'Blue Shirt, Grey Pants',5:'Blue Shirt, Grey Pants',3:'Grey Shirt, Grey Pants',6:'Grey Shirt, Grey Pants'},coach:{hit:'Sherman',def:'Wass/Manella'}};
+  S.settings.muck=S.settings.muck||{gear:{},coach:{}};
+  S.skip=S.skip||[]; [['gcc','2026-11-11'],['gcc','2026-11-13'],['muck','2026-11-11'],['muck','2026-11-13'],['gcc','2026-11-27'],['gcc','2026-11-28'],['muck','2026-11-27'],['muck','2026-11-28']].forEach(([team,date])=>S.skip.push({team,date}));
+  S.settingsV1=true; }
 function defGroups(start){return [{id:uid(),name:'Infield',start:start||'15:00',blocks:[]},{id:uid(),name:'Outfield',start:start||'15:00',blocks:[]}];}
 function demoGroups(){const B=(n,c,m)=>({id:uid(),name:n,cat:c,min:m,stations:[],notes:''});
   return [{id:uid(),name:'Infield',start:'13:30',blocks:[B('Toss','throw',10),B('Box drill','def',5),B('1/2/3 across','def',5),B('Fungo toss','def',20),B('Picks and tags','def',10)]},
@@ -311,9 +315,10 @@ function trimmed(src,T,newStart,teamOnly){
   return c;
 }
 function fmt24(m){m=((m%1440)+1440)%1440;return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');}
-function fillWeek(ws,from){
+function fillWeek(ws,from,team,to,dows){
   let n=0;
-  (S.rules||[]).forEach(r=>{const d=addDays(ws,r.dow-1); if(from&&d<from) return;
+  (S.rules||[]).forEach(r=>{const d=addDays(ws,r.dow-1); if(from&&d<from) return; if(team&&r.team!==team) return; if(to&&d>to) return; if(dows&&dows.length&&!dows.includes(r.dow)) return;
+    if((S.skip||[]).some(x=>x.team===r.team&&x.date===d)) return;
     let tpl=S.templates.find(t=>t.id===r.tplId); if(!tpl) return;
     if(r.trim||r.teamOnly||r.start){ tpl={...trimmed(tpl,r.trim||0,r.start||tpl.start,r.teamOnly),id:tpl.id}; }
     if(S.plans.some(p=>p.team===r.team&&p.date===d)) return;
@@ -534,7 +539,7 @@ function renderTop(){
     cal:'<path d="M4 6h16v14H4z M4 10h16 M8 3v5 M16 3v5" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
     videos:'<path d="M3 6h13v12H3z M16 10l5-3v10l-5-3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>',
     templates:'<path d="M4 4h16v6H4z M4 14h7v6H4z M14 14h6v6h-6z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'};
-  const active = view==='edit'||view==='card'?backTo:view==='team'||view==='prog'?'cal':view;
+  const active = view==='edit'||view==='card'?backTo:view==='team'||view==='prog'||view==='tools'?'cal':view;
   document.getElementById('nav').innerHTML=[['cal','Calendar'],['plans','Plans'],['library','Drills'],['videos','Videos/Thoughts'],['templates','Templates']].filter(x=>!(RO&&x[0]==='templates')).map(([k,l])=>
     `<button class="${active===k?'on':''}" data-act="nav" data-id="${k}"><svg viewBox="0 0 24 24">${ic[k]}</svg>${l}</button>`).join('');
 }
@@ -587,7 +592,7 @@ function focusHTML(b){const L=(b.focus||'').split('\n').map(x=>x.trim()).filter(
   const F=b.files||[]; if(F.length){ h+=`<div class="bfiles" style="display:flex;flex-wrap:wrap;gap:6px;margin:6px 0">${F.map(f=>f.k==='image'?`<a href="${esc(viewUrl(f.u))}" target="_blank" rel="noopener" data-stop="1"><img src="${esc(imgSrc(f.u))}" data-u="${esc(f.u)}" onerror="imgErr(this)" alt="${esc(f.n)}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;border:1px solid rgba(128,128,128,.35)"></a>`:`<a href="${esc(f.u)}" target="_blank" rel="noopener" data-stop="1" style="display:inline-flex;align-items:center;padding:6px 12px;border-radius:999px;border:1px solid rgba(128,128,128,.45);font-size:13px;color:inherit;text-decoration:none;align-self:center">📎 ${esc(f.n)}</a>`).join('')}</div>`; }
   return h;}
 function acctBar(){
-  return `<div class="row mt" style="gap:8px;flex-wrap:wrap"><span class="muted small grow">Signed in as ${esc(ACCT.email)} · ${ACCT.role==='coach'?'Coach (can edit)':'Player (view only)'}</span>${ACCT.role==='coach'?`<button class="btn sm" data-act="teamview">Players & programs</button>`:''}<button class="btn sm" data-act="signout">Sign out</button></div>`;
+  return `<div class="row mt" style="gap:8px;flex-wrap:wrap"><span class="muted small" style="flex-basis:100%">Signed in as ${esc(ACCT.email)} · ${ACCT.role==='coach'?'Coach (can edit)':'Player (view only)'}</span>${ACCT.role==='coach'?`<button class="btn sm gold" data-act="tools">✦ Shortcuts & AI</button><button class="btn sm" data-act="teamview">Players & programs</button>`:''}<button class="btn sm" data-act="notif" aria-label="Notifications">🔔</button><button class="btn sm" data-act="signout">Sign out</button></div>`;
 }
 function pName(m){return m&&m.name?m.name:(m?m.email:'');}
 function teamName(id){const t=TEAMS.find(x=>x.id===id);return t?t.name:'';}
@@ -656,6 +661,175 @@ function progSheet(){
 }
 function syncP(){const g=id=>document.getElementById(id); if(!g('pg-n')) return;
   pdraft.name=g('pg-n').value; pdraft.body=g('pg-b').value; pdraft.assigned=[...layer.querySelectorAll('.pg-a:checked')].map(x=>x.value);}
+/* ===== Shortcuts & AI engine ===== */
+const dowOf=d=>parseD(d).getDay()||7;
+const TEAMIDS=()=>TEAMS.map(t=>t.id);
+function teamsOf(t){return t==='both'||!t?TEAMIDS():[t];}
+function setOf(team){S.settings=S.settings||{}; S.settings[team]=S.settings[team]||{gear:{},coach:{}}; const o=S.settings[team]; o.gear=o.gear||{}; o.coach=o.coach||{}; return o;}
+function isBills(p){return /bills/i.test(p.focus||'');}
+function datesIn(from,to,dows){const out=[]; let d=from; let n=0; while(d<=to&&n<400){ if(!dows||!dows.length||dows.includes(dowOf(d))) out.push(d); d=addDays(d,1); n++; } return out;}
+function isSkipped(team,date){return (S.skip||[]).some(x=>x.team===team&&x.date===date);}
+function allBlocks(p){return [...p.blocks,...(p.groups||[]).flatMap(g=>g.blocks)];}
+function tplByName(v){ if(!v) return null; const s=String(v).toLowerCase(); return S.templates.find(t=>t.id===v)||S.templates.find(t=>t.name.toLowerCase()===s)||S.templates.find(t=>t.name.toLowerCase().includes(s)); }
+const DAYNAME=n=>['','Mon','Tue','Wed','Thu','Fri','Sat','Sun'][n];
+const TNAME=t=>t==='both'?'Both teams':teamName(t)||t;
+function rng(a){return a.from===a.to||!a.to?dateStr(a.from):dateStr(a.from)+' – '+dateStr(a.to);}
+function dlist(ds){return ds&&ds.length?ds.map(DAYNAME).join('/'):'every day';}
+
+function describeAct(a){
+  switch(a.type){
+    case 'gear_rule': return `${TNAME(a.team)} gear: `+Object.entries(a.days||{}).map(([d,v])=>`${DAYNAME(+d)} ${v||'(none)'}`).join(' · ')+` — from ${dateStr(a.from||todayISO())} on`;
+    case 'coach_rule': return `${TNAME(a.team)}: ${(CATS[a.cat]||{label:a.cat}).label} blocks → ${a.coach||'(no coach)'}`;
+    case 'quote': return `${TNAME(a.team)} quote for week of ${dateStr(weekStart(a.week))}: “${a.quote}”`;
+    case 'cancel': return `Cancel practices (${TNAME(a.team)}) ${rng(a)} (${dlist(a.dows)})${a.keep_lifts?', keep lifts':''}${a.note?' — '+a.note:''}`;
+    case 'restore': return `Bring back practices (${TNAME(a.team)}) ${rng(a)} (${dlist(a.dows)})`;
+    case 'schedule': { const t=tplByName(a.template); return a.remove?`${TNAME(a.team)}: no repeating practice on ${DAYNAME(a.dow)}`:`${TNAME(a.team)} every ${DAYNAME(a.dow)}: ${t?t.name:'“'+a.template+'” (not found)'}${a.start?' at '+fmt(toM(a.start)):''}${a.apply_from?` — redo ${dateStr(a.apply_from)} – ${dateStr(a.apply_to||addDays(a.apply_from,27))}`:''}`; }
+    case 'fill': return `Fill practices (${TNAME(a.team)}) ${rng(a)}${a.replace?' (replace what’s there)':' (empty days only)'}`;
+    case 'add_block': return `Add “${a.name}” (${a.min||30} min, ${(CATS[a.cat]||CATS.other).label}) at the ${a.where==='start'?'start':'end'} of ${TNAME(a.team)} practices ${rng(a)} (${dlist(a.dows)})${a.coach?' — '+a.coach:''}`;
+    case 'remove_block': return `Remove blocks named “${a.name}” from ${TNAME(a.team)} practices ${rng(a)} (${dlist(a.dows)})`;
+    case 'set_field': return `Set ${a.field} to “${a.value}” on ${TNAME(a.team)} practices ${rng(a)} (${dlist(a.dows)})`;
+    default: return 'Unknown change';
+  }
+}
+
+function runAct(a){
+  const today=todayISO(); let n=0;
+  const plansIn=(team,from,to,dows,incBills)=>S.plans.filter(p=>teamsOf(team).includes(p.team)&&p.date>=from&&p.date<=(to||from)&&(!dows||!dows.length||dows.includes(dowOf(p.date)))&&(incBills||!isBills(p)));
+  switch(a.type){
+    case 'gear_rule': teamsOf(a.team).forEach(t=>{ const g=setOf(t).gear; Object.entries(a.days||{}).forEach(([d,v])=>{ g[d]=v||''; });
+        plansIn(t,a.from||today,'9999-12-31').forEach(p=>{ const d=String(dowOf(p.date)); if(d in (a.days||{})){ p.gear=a.days[d]||''; n++; } }); }); break;
+    case 'coach_rule': teamsOf(a.team).forEach(t=>{ const c=setOf(t).coach, old=c[a.cat]; c[a.cat]=a.coach||'';
+        plansIn(t,a.from||today,'9999-12-31').forEach(p=>allBlocks(p).forEach(b=>{ if(b.cat===a.cat&&(!b.coach||b.coach===old)){ b.coach=a.coach||''; n++; } })); }); break;
+    case 'quote': { const w=weekStart(a.week||today); S.plans.forEach(p=>{ if(teamsOf(a.team).includes(p.team)&&weekStart(p.date)===w){ p.quote=a.quote||''; n++; } }); break; }
+    case 'cancel': teamsOf(a.team).forEach(t=>{ datesIn(a.from,a.to||a.from,a.dows).forEach(d=>{
+        S.skip=S.skip||[]; if(!isSkipped(t,d)) S.skip.push({team:t,date:d});
+        S.plans.filter(p=>p.team===t&&p.date===d&&!isBills(p)).forEach(p=>{
+          const lifts=allBlocks(p).filter(b=>b.cat==='cond'&&/lift/i.test(b.name||''));
+          if(a.keep_lifts&&lifts.length){
+            const keepOnly=(blocks,start)=>{ let m=toM(start), st=null; const out=[]; for(const b of blocks){ if(lifts.includes(b)){ if(st===null) st=m; out.push(b); } m+=+b.min; } return {blocks:out,start:st===null?start:fmt24(st)}; };
+            const tb=keepOnly(p.blocks,p.start); p.blocks=tb.blocks; p.start=tb.start;
+            p.groups=(p.groups||[]).map(g=>{ const k=keepOnly(g.blocks,g.start); return {...g,blocks:k.blocks,start:k.start}; }).filter(g=>g.blocks.length);
+            p.focus='Lift only (practice canceled)'+(a.note?' · '+a.note:''); }
+          else S.plans=S.plans.filter(x=>x!==p);
+          n++; }); }); }); break;
+    case 'restore': teamsOf(a.team).forEach(t=>{ const ds=datesIn(a.from,a.to||a.from,a.dows); S.skip=(S.skip||[]).filter(x=>!(x.team===t&&ds.includes(x.date)));
+        S.plans=S.plans.filter(p=>!(p.team===t&&ds.includes(p.date)&&/practice canceled/i.test(p.focus||''))); n+=fillRange(t,a.from,a.to||a.from,a.dows); }); break;
+    case 'schedule': teamsOf(a.team).forEach(t=>{ S.rules=S.rules||[]; const old=S.rules.find(r=>r.team===t&&r.dow===+a.dow);
+        if(a.remove){ S.rules=S.rules.filter(r=>r!==old); }
+        else { const tp=tplByName(a.template)||(old&&S.templates.find(x=>x.id===old.tplId)); if(!tp) return;
+          const nr={id:old?old.id:uid(),team:t,dow:+a.dow,tplId:tp.id}; if(a.start) nr.start=a.start; else if(old&&old.tplId===tp.id&&old.start) nr.start=old.start;
+          if(old&&old.tplId===tp.id){ ['trim','teamOnly','lift'].forEach(k=>{ if(old[k]) nr[k]=old[k]; }); }
+          S.rules=S.rules.filter(r=>r!==old); S.rules.push(nr); }
+        if(a.apply_from){ const to=a.apply_to||addDays(a.apply_from,27); const ds=datesIn(a.apply_from,to,[+a.dow]);
+          S.plans=S.plans.filter(p=>!(p.team===t&&ds.includes(p.date)&&!isBills(p)&&!isSkipped(t,p.date))); n+=fillRange(t,a.apply_from,to,[+a.dow]); } n++; }); break;
+    case 'fill': teamsOf(a.team).forEach(t=>{ const to=a.to||a.from; if(a.replace) S.plans=S.plans.filter(p=>!(p.team===t&&p.date>=a.from&&p.date<=to&&!isBills(p)&&!isSkipped(t,p.date)&&(!a.dows||!a.dows.length||a.dows.includes(dowOf(p.date)))));
+        n+=fillRange(t,a.from,to,a.dows); }); break;
+    case 'add_block': plansIn(a.team,a.from,a.to,a.dows).forEach(p=>{ const b={id:uid(),name:a.name||'Block',cat:CATS[a.cat]?a.cat:'other',min:Math.max(1,+a.min||30),stations:[],notes:'',focus:a.focus||''};
+        if(a.coach) b.coach=a.coach; else presetCoach(b,p.team);
+        if(allBlocks(p).some(x=>(x.name||'').toLowerCase()===b.name.toLowerCase())) return;
+        if(a.where==='start'){ p.blocks.unshift(b); p.start=fmt24(toM(p.start)-b.min); } else p.blocks.push(b); n++; }); break;
+    case 'remove_block': { const s=String(a.name||'').toLowerCase(); if(!s) break; plansIn(a.team,a.from,a.to,a.dows).forEach(p=>{ const before=allBlocks(p).length;
+        p.blocks=p.blocks.filter(b=>!(b.name||'').toLowerCase().includes(s)); (p.groups||[]).forEach(g=>g.blocks=g.blocks.filter(b=>!(b.name||'').toLowerCase().includes(s))); n+=before-allBlocks(p).length; }); break; }
+    case 'set_field': if(!['gear','focus','location','notes','start'].includes(a.field)) break; plansIn(a.team,a.from,a.to,a.dows).forEach(p=>{ p[a.field]=a.value||''; n++; }); break;
+  }
+  return n;
+}
+function fillRange(team,from,to,dows){ let n=0, ws=weekStart(from); while(ws<=to){ n+=fillWeek(ws,from,team,to,dows); ws=addDays(ws,7); } return n; }
+let UNDO=null;
+function applyActs(acts,label){ UNDO={json:JSON.stringify(S),label:label||'last change'}; let n=0; acts.forEach(a=>{ try{ n+=runAct(a)||0; }catch(e){ console.warn(e); } }); save(); return n; }
+function undoLast(){ if(!UNDO) return; const flags=Object.keys(S).filter(k=>/V\d+$|^ithrowUndo$/.test(k)); S=JSON.parse(UNDO.json); UNDO=null; save(); render(); toast('Undone'); }
+
+
+/* ===== Notifications ===== */
+function notifSupported(){ return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window; }
+function isIOS(){ return /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1); }
+async function notifSheet(){
+  if(!notifSupported()){
+    sheet(`<h3>🔔 Notifications</h3>${isIOS()&&!navigator.standalone?`<p>On iPhone, notifications only work from the Home Screen app:</p><ol class="small" style="padding-left:20px;line-height:1.6"><li>Open this page in <b>Safari</b></li><li>Tap <b>Share</b> → <b>Add to Home Screen</b></li><li>Open Practice Plus from your Home Screen and tap 🔔 again</li></ol>`:'<p>This browser can’t get notifications. Try Chrome or Safari, or add the app to your Home Screen.</p>'}<button class="btn full mt" data-act="close">OK</button>`); return; }
+  let on=null; try{ on=await window.PP_pushState(); }catch(e){}
+  const me=(TEAMLIST||[]).find(m=>m.email===(ACCT&&ACCT.email));
+  const want=(on&&on.teams&&on.teams.length)?on.teams:(me&&me.team?[me.team]:[S.team]);
+  sheet(`<h3>🔔 Notifications</h3><p class="muted small">Get a 9 AM notification with what practice looks like, plus schedule changes, new programs and messages from coaches.</p>
+    <label class="f">Which team?</label>${TEAMS.map(t=>`<label class="row" style="gap:10px;padding:8px 0"><input type="checkbox" class="nt-t" value="${t.id}" ${want.includes(t.id)?'checked':''} style="width:20px;height:20px"><span>${esc(t.name)}</span></label>`).join('')}
+    ${Notification.permission==='denied'?'<p class="small" style="color:#ef5350">Notifications are blocked for this app. Turn them on in your phone’s Settings → Notifications, then try again.</p>':''}
+    <button class="btn gold full mt" data-act="notifon">${on?'Save':'Turn on notifications'}</button>
+    ${on?'<button class="btn full mt" data-act="notifoff">Turn off on this device</button>':''}
+    <button class="btn full mt" data-act="close">Close</button>`);
+}
+function notifyPrompt(acts){
+  if(!window.PP_notify||RO) return;
+  const t0=todayISO(), soon=addDays(t0,7);
+  const rel=acts.filter(a=>['cancel','restore','schedule','set_field','add_block','remove_block'].includes(a.type)&&(a.from||a.apply_from||t0)<=soon&&((a.to||a.apply_to||a.from||a.apply_from||t0)>=t0));
+  if(!rel.length) return;
+  const teams=[...new Set(rel.flatMap(a=>teamsOf(a.team)))];
+  const txt=rel.map(a=>describeAct(a).replace(/^Cancel practices \(([^)]*)\)/,'Practice canceled').replace(/ — redo.*$/,'').replace(' (every day)','').replace(', keep lifts',' — lifts still on')).join('\n');
+  sheet(`<h3>📣 Let the team know?</h3><p class="muted small">These changes are in the next week. Send a notification?</p>
+    <textarea class="in" id="np-b" rows="4">${esc(txt)}</textarea><p class="muted small">To: ${teams.map(teamName).join(' & ')}</p>
+    <div class="grid2 mt"><button class="btn" data-act="close">Skip</button><button class="btn gold" data-act="npsend" data-id="${teams.join(',')}">Send</button></div>`);
+}
+let AIRES=null, AIBUSY=false;
+function vTools(){
+  const t=S.team, st=setOf(t), nextMon=addDays(weekStart(todayISO()),7);
+  const sec=(title,body,open)=>`<details class="card" ${open?'open':''}><summary style="cursor:pointer;font-weight:700;list-style:none;display:flex;justify-content:space-between"><span>${title}</span><span class="muted">▾</span></summary><div class="mt">${body}</div></details>`;
+  const daysBoxes=(cls,on)=>`<div class="row" style="flex-wrap:wrap;gap:6px">${DOWS.map((d,i)=>`<label class="pill" style="cursor:pointer;display:inline-flex;gap:4px;align-items:center"><input type="checkbox" class="${cls}" value="${i+1}" ${on.includes(i+1)?'checked':''}>${d}</label>`).join('')}</div>`;
+  const teamSel=id=>`<select class="in" id="${id}"><option value="${t}">${esc(teamName(t))} only</option><option value="both">Both teams</option></select>`;
+  let h=`<div class="row mt"><button class="btn sm" data-act="nav" data-id="cal">‹ Calendar</button><div class="grow"></div></div>
+  <h2>Shortcuts & AI</h2>`;
+  if(UNDO) h+=`<div class="card row" style="gap:8px;border-color:var(--gold)"><span class="grow small">Changed: ${esc(UNDO.label)}</span><button class="btn sm" data-act="undo">Undo</button></div>`;
+  h+=`<div class="card"><b>✦ Ask AI</b><p class="muted small" style="margin:4px 0 8px">Tell it what you want in plain words. It shows you the changes first, and nothing happens until you tap Apply.</p>
+  <textarea class="in" id="ai-q" rows="3" placeholder="e.g. Blue shirts and grey pants every Tuesday and Friday · Cancel practice Thanksgiving week but keep lifts · Add a 15 min bunt defense block to the start of every Wednesday practice in December">${esc(window._aiq||'')}</textarea>
+  <button class="btn gold full mt" data-act="aiask" ${AIBUSY?'disabled':''}>${AIBUSY?'Thinking…':'Ask AI'}</button>`;
+  if(AIRES){ if(AIRES.error) h+=`<p class="small mt" style="color:#ef5350">${esc(AIRES.error)}</p>`;
+    if(AIRES.summary) h+=`<p class="small mt">${esc(AIRES.summary)}</p>`;
+    if(AIRES.question) h+=`<p class="small mt"><b>Question:</b> ${esc(AIRES.question)}</p>`;
+    if(AIRES.acts&&AIRES.acts.length){ h+=`<div class="mt">${AIRES.acts.map((a,i)=>`<label class="row" style="gap:10px;padding:8px 0;border-top:1px solid var(--line);align-items:flex-start"><input type="checkbox" class="ai-sel" value="${i}" checked style="width:20px;height:20px;margin-top:2px"><span class="small">${esc(describeAct(a))}</span></label>`).join('')}</div>
+      <div class="grid2 mt"><button class="btn" data-act="aiclear">Discard</button><button class="btn gold" data-act="aiapply">Apply</button></div>`; } }
+  h+=`</div><div class="vgh">Quick shortcuts · ${esc(teamName(t))}</div>`;
+  h+=sec('📣 Send a notification',`<label class="f" for="ns-b">Message</label><textarea class="in" id="ns-b" rows="3" placeholder="e.g. Practice moved inside to the gym today"></textarea>
+    <label class="f mt" for="ns-to" style="display:block">Send to</label><select class="in" id="ns-to"><option value="all">Everyone</option>${TEAMS.map(x=>`<option value="${x.id}" ${x.id===t?'selected':''}>${esc(x.name)}</option>`).join('')}<option value="pick">Certain players…</option></select>
+    <div id="ns-pk" style="display:none" class="mt">${(TEAMLIST||[]).map(m=>`<label class="row" style="gap:10px;padding:6px 0"><input type="checkbox" class="ns-p" value="${esc(m.email)}" style="width:20px;height:20px"><span class="small">${esc(pName(m))}</span></label>`).join('')||'<p class="muted small">Open Players & programs once to load your roster.</p>'}</div>
+    <button class="btn gold full mt" data-act="nssend">Send notification</button>`);
+  h+=sec('👕 Gear by day',`<p class="muted small">Fills the gear on every upcoming practice for that day, and on new ones automatically. Leave a day blank for no gear.</p>
+    ${DOWS.map((d,i)=>`<div class="row" style="gap:8px;margin:6px 0"><b style="width:40px">${d}</b><input class="in grow" id="gear-${i+1}" value="${esc(st.gear[i+1]||'')}" placeholder="e.g. Blue Shirt, Grey Pants"></div>`).join('')}
+    <button class="btn gold full mt" data-act="sc_gear">Save & apply</button>`);
+  h+=sec('🧢 Coach for each block type',`<p class="muted small">New blocks get this coach automatically. Upcoming blocks with no coach (or the old one) get updated.</p>
+    ${Object.entries(CATS).map(([k,c])=>`<div class="row" style="gap:8px;margin:6px 0"><span class="dot" style="background:${c.color}"></span><span style="width:120px" class="small">${c.label}</span><input class="in grow" id="coach-${k}" value="${esc(st.coach[k]||'')}" placeholder="—"></div>`).join('')}
+    <button class="btn gold full mt" data-act="sc_coach">Save & apply</button>`);
+  h+=sec('💬 Quote of the week',`<div class="grid2"><div><label class="f" for="q-w">Week of</label><input class="in" type="date" id="q-w" value="${nextMon}"></div><div><label class="f" for="q-t">Team</label>${teamSel('q-tm')}</div></div>
+    <label class="f mt" for="q-q" style="display:block">Quote</label><input class="in" id="q-q" placeholder="Every day of that week gets it"><button class="btn gold full mt" data-act="sc_quote">Set for the week</button>`);
+  h+=sec('🚫 Cancel or bring back practices',`<div class="grid2"><div><label class="f" for="c-f">From</label><input class="in" type="date" id="c-f" value="${todayISO()}"></div><div><label class="f" for="c-t">To</label><input class="in" type="date" id="c-t" value="${todayISO()}"></div></div>
+    <label class="f mt" style="display:block">Days (none checked = every day)</label>${daysBoxes('c-d',[])}
+    <div class="grid2 mt"><div><label class="f" for="c-tm">Team</label>${teamSel('c-tm')}</div><div><label class="f" for="c-n">Reason (optional)</label><input class="in" id="c-n" placeholder="e.g. Thanksgiving"></div></div>
+    <label class="row mt" style="gap:8px"><input type="checkbox" id="c-k" checked style="width:20px;height:20px"><span class="small">Keep lifts on those days</span></label>
+    <div class="grid2 mt"><button class="btn" data-act="sc_restore">Bring back</button><button class="btn gold" data-act="sc_cancel">Cancel practices</button></div>`);
+  h+=sec('➕ Add a block to many practices',`<label class="f" for="a-n">Block name</label><input class="in" id="a-n" placeholder="e.g. Plyo & stretch, Lift, Bunt defense">
+    <div class="grid2 mt"><div><label class="f" for="a-c">Category</label><select class="in" id="a-c">${Object.entries(CATS).map(([k,c])=>`<option value="${k}">${c.label}</option>`).join('')}</select></div><div><label class="f" for="a-m">Minutes</label><input class="in" type="number" id="a-m" value="30" min="1"></div></div>
+    <div class="grid2 mt"><div><label class="f" for="a-w">Where</label><select class="in" id="a-w"><option value="end">End of practice</option><option value="start">Start of practice</option></select></div><div><label class="f" for="a-co">Coach (optional)</label><input class="in" id="a-co" placeholder="Uses preset"></div></div>
+    <label class="f mt" style="display:block">Days</label>${daysBoxes('a-d',[])}
+    <div class="grid2 mt"><div><label class="f" for="a-f">From</label><input class="in" type="date" id="a-f" value="${todayISO()}"></div><div><label class="f" for="a-t">To</label><input class="in" type="date" id="a-t" value="${addDays(todayISO(),27)}"></div></div>
+    <div class="mt"><label class="f" for="a-tm">Team</label>${teamSel('a-tm')}</div>
+    <button class="btn gold full mt" data-act="sc_add">Add block</button>`);
+  h+=sec('📅 Weekly schedule',`<p class="muted small">Pick which practice template runs on which day (team practice, defense day, lift only…). Then fill the calendar from it.</p>
+    <button class="btn full" data-act="nav" data-id="templates">Edit weekly schedule & templates</button>
+    <div class="grid2 mt"><div><label class="f" for="f-f">From</label><input class="in" type="date" id="f-f" value="${todayISO()}"></div><div><label class="f" for="f-t">To</label><input class="in" type="date" id="f-t" value="${addDays(todayISO(),27)}"></div></div>
+    <label class="row mt" style="gap:8px"><input type="checkbox" id="f-r" style="width:20px;height:20px"><span class="small">Replace practices already there (otherwise only fills empty days)</span></label>
+    <button class="btn gold full mt" data-act="sc_fill">Fill calendar</button>`);
+  return h;
+}
+function aiContext(){
+  const t0=todayISO(), end=addDays(t0,41);
+  return {today:t0, today_dow:DAYNAME(dowOf(t0)), current_team:S.team, teams:TEAMS, categories:Object.fromEntries(Object.entries(CATS).map(([k,c])=>[k,c.label])),
+    templates:S.templates.map(t=>({id:t.id,name:t.name,start:t.start,minutes:total(t)})),
+    weekly_schedule:(S.rules||[]).map(r=>({team:r.team,dow:r.dow,day:DAYNAME(r.dow),template:(S.templates.find(t=>t.id===r.tplId)||{}).name,start:r.start||null})),
+    settings:Object.fromEntries(TEAMIDS().map(t=>[t,setOf(t)])),
+    canceled_days:(S.skip||[]).filter(x=>x.date>=t0),
+    upcoming:S.plans.filter(p=>p.date>=t0&&p.date<=end).sort((a,b)=>a.date<b.date?-1:1).map(p=>({team:p.team,date:p.date,day:DAYNAME(dowOf(p.date)),start:p.start,focus:p.focus,gear:p.gear,quote:p.quote,blocks:p.blocks.map(b=>b.name+' ('+b.min+'m)'),groups:(p.groups||[]).filter(g=>g.blocks.length).map(g=>g.name+' @'+g.start+': '+g.blocks.map(b=>b.name).join(', '))}))};
+}
+function cleanActs(acts){ const D=/^\d{4}-\d{2}-\d{2}$/; return (acts||[]).filter(a=>a&&a.type).map(a=>{ a={...a}; if(a.team&&a.team!=='both'&&!TEAMIDS().includes(a.team)) a.team=S.team; if(!a.team) a.team=S.team;
+    if(a.dows) a.dows=a.dows.map(Number).filter(x=>x>=1&&x<=7); ['from','to','week','apply_from','apply_to'].forEach(k=>{ if(a[k]&&!D.test(a[k])) delete a[k]; });
+    if(['cancel','restore','fill','add_block','remove_block','set_field'].includes(a.type)&&!a.from) a.from=todayISO(); if(a.from&&!a.to&&['cancel','restore','fill','add_block','remove_block','set_field'].includes(a.type)) a.to=a.from;
+    if(a.to&&a.from&&a.to<a.from) [a.from,a.to]=[a.to,a.from]; return a; }); }
+
 function render(){
   renderTop();
   const app=document.getElementById('app');
@@ -668,6 +842,7 @@ function render(){
   else if(view==='videos') app.innerHTML=vVideos();
   else if(view==='team') app.innerHTML=vTeam();
   else if(view==='prog') app.innerHTML=vProg();
+  else if(view==='tools') app.innerHTML=vTools();
   if(ACCT&&(view==='cal'||view==='team')) app.insertAdjacentHTML('afterbegin',acctBar()+(view==='cal'?myProgsCard():''));
 }
 
@@ -950,12 +1125,45 @@ document.addEventListener('click',e=>{ if(e.target.closest&&e.target.closest('[d
   const el=e.target.closest('[data-act]'); if(!el) return;
   const a=el.dataset.act, id=el.dataset.id, p=curPlan(); const o=p&&(view==='edit'||view==='library')?sched(p).obj:null;
   if(a==='closebg'){ if(e.target===el) closeSheet(); return; }
-  if(RO){ const ok=['close','team','nav','calmode','caltoday','calprev','calnext','gotoweek','copy','libcat','vidtab','expd','sched','signout','prog','progback','print'];
+  if(RO){ const ok=['close','team','nav','calmode','caltoday','calprev','calnext','gotoweek','copy','libcat','vidtab','expd','sched','signout','prog','progback','print','notif','notifon','notifoff'];
     if(a==='open'){ editingId=id; backTo=view==='cal'?'cal':'plans'; view='card'; render(); window.scrollTo(0,0); return; }
     if(a==='back'){ view=backTo; render(); return; }
     if(!ok.includes(a)) return; }
   if(a==='signout'){ window.PP_signOut&&window.PP_signOut(); return; }
   if(a==='teamview'){ view='team'; render(); window.PP_loadTeam&&window.PP_loadTeam(); window.PP_loadPrograms&&window.PP_loadPrograms(); return; }
+  if(a==='notif'){ notifSheet(); return; }
+  if(a==='notifon'){ const teams=[...document.querySelectorAll('.nt-t:checked')].map(x=>x.value); if(!teams.length){toast('Pick a team');return;}
+    window.PP_pushOn(teams).then(()=>{ closeSheet(); toast('Notifications on'); }).catch(e=>toast(e.message==='denied'?'Notifications were blocked. Allow them in Settings.':e.message==='off'?'Notifications aren’t set up yet.':'Couldn’t turn on notifications')); return; }
+  if(a==='notifoff'){ window.PP_pushOff().then(()=>{ closeSheet(); toast('Notifications off on this device'); }); return; }
+  if(a==='npsend'){ const b=(document.getElementById('np-b').value||'').trim(); if(!b){closeSheet();return;} const teams=id.split(','); closeSheet();
+    window.PP_notify({title:teams.map(teamName).join(' & ')+' schedule update',body:b,teams}).then(r=>toast('Sent to '+r.sent+' device'+(r.sent===1?'':'s'))).catch(()=>toast('Couldn’t send')); return; }
+  if(a==='nssend'){ const b=(document.getElementById('ns-b').value||'').trim(), to=document.getElementById('ns-to').value; if(!b){toast('Type a message');return;}
+    const msg={title:'Coach '+((TEAMLIST||[]).find(m=>m.email===ACCT.email)||{}).name||'Practice Plus',body:b};
+    msg.title=(((TEAMLIST||[]).find(m=>m.email===ACCT.email)||{}).name)||'Practice Plus';
+    if(to==='pick'){ msg.emails=[...document.querySelectorAll('.ns-p:checked')].map(x=>x.value); if(!msg.emails.length){toast('Pick players');return;} } else if(to!=='all') msg.teams=[to];
+    window.PP_notify(msg).then(r=>{ document.getElementById('ns-b').value=''; toast('Sent to '+r.sent+' device'+(r.sent===1?'':'s')); }).catch(()=>toast('Couldn’t send — is notifications setup done?')); return; }
+  if(a==='tools'){ view='tools'; render(); window.scrollTo(0,0); return; }
+  if(a==='undo'){ undoLast(); return; }
+  if(a==='aiclear'){ AIRES=null; render(); return; }
+  if(a==='aiask'){ const q=(document.getElementById('ai-q').value||'').trim(); window._aiq=q; if(!q){toast('Type what you want changed');return;}
+    AIBUSY=true; AIRES=null; render();
+    window.PP_ai(q,aiContext()).then(r=>{ AIRES={summary:r.summary||'',question:r.question||'',acts:cleanActs(r.actions)}; if(!AIRES.acts.length&&!AIRES.question&&!AIRES.summary) AIRES.summary='No changes needed.'; })
+      .catch(e=>{ AIRES={error:e.message==='ai-off'?'The AI isn’t turned on yet. Follow the AI setup steps to connect it.':e.message==='not-coach'?'Only coaches can use the AI.':'The AI couldn’t answer right now. Try again in a minute.'}; })
+      .finally(()=>{ AIBUSY=false; if(view==='tools') render(); }); return; }
+  if(a==='aiapply'){ const sel=[...document.querySelectorAll('.ai-sel:checked')].map(x=>AIRES.acts[+x.value]); if(!sel.length){toast('Nothing selected');return;}
+    const n=applyActs(sel,window._aiq||'AI change'); AIRES=null; window._aiq=''; render(); window.scrollTo(0,0); toast(n?'Done — '+n+' change'+(n===1?'':'s'):'Done'); if(n) notifyPrompt(sel); return; }
+  if(a&&a.startsWith('sc_')){ const v=x=>{const el=document.getElementById(x);return el?el.value.trim():'';}, ck=c=>[...document.querySelectorAll('.'+c+':checked')].map(x=>+x.value);
+    let acts=[], label='';
+    if(a==='sc_gear'){ const days={}; for(let i=1;i<=7;i++) days[i]=v('gear-'+i); acts=[{type:'gear_rule',team:S.team,days,from:todayISO()}]; label='Gear by day'; }
+    if(a==='sc_coach'){ acts=Object.keys(CATS).map(k=>({type:'coach_rule',team:S.team,cat:k,coach:v('coach-'+k)})).filter(x=>x.coach!==(setOf(S.team).coach[x.cat]||'')); label='Coaches by block type'; if(!acts.length){toast('No changes');return;} }
+    if(a==='sc_quote'){ if(!v('q-q')){toast('Type the quote');return;} acts=[{type:'quote',team:v('q-tm'),week:v('q-w')||todayISO(),quote:v('q-q')}]; label='Quote of the week'; }
+    if(a==='sc_cancel'||a==='sc_restore'){ const f=v('c-f'),t=v('c-t')||f; if(!f){toast('Pick dates');return;}
+      acts=[{type:a==='sc_cancel'?'cancel':'restore',team:v('c-tm'),from:f<=t?f:t,to:f<=t?t:f,dows:ck('c-d'),keep_lifts:document.getElementById('c-k').checked,note:v('c-n')}]; label=a==='sc_cancel'?'Canceled practices':'Brought back practices'; }
+    if(a==='sc_add'){ if(!v('a-n')){toast('Name the block');return;} acts=[{type:'add_block',team:v('a-tm'),name:v('a-n'),cat:v('a-c'),min:+v('a-m')||30,where:v('a-w'),coach:v('a-co'),dows:ck('a-d'),from:v('a-f'),to:v('a-t')||v('a-f')}]; label='Added '+v('a-n'); }
+    if(a==='sc_fill'){ acts=[{type:'fill',team:S.team,from:v('f-f'),to:v('f-t')||v('f-f'),replace:document.getElementById('f-r').checked}]; label='Filled calendar'; }
+    const go=()=>{ const ca=cleanActs(acts), n=applyActs(ca,label); render(); window.scrollTo(0,0); toast(n?'Done — '+n+' change'+(n===1?'':'s'):'Saved'); if(n) setTimeout(()=>notifyPrompt(ca),300); };
+    if((a==='sc_fill'&&acts[0].replace)||a==='sc_cancel') confirmSheet(describeAct(cleanActs(acts)[0])+'?',go,a==='sc_cancel'?'Yes, cancel them':'Yes, replace them'); else go();
+    return; }
   if(a==='prog'){ progId=id; view='prog'; render(); window.scrollTo(0,0); return; }
   if(a==='progback'){ view=RO?'cal':'team'; render(); return; }
   if(a==='addmember'){ const em=(document.getElementById('tm-e').value||'').trim().toLowerCase(), r=document.getElementById('tm-r').value, nm=(document.getElementById('tm-n').value||'').trim(); if(!/^\S+@\S+\.\S+$/.test(em)){toast('Enter an email');return;} window.PP_addMember(em,r,nm?{name:nm}:null); return; }
@@ -1055,7 +1263,7 @@ document.addEventListener('click',e=>{ if(e.target.closest&&e.target.closest('[d
 });
 function showText(txt){sheet(`<h3>Copy plan</h3><textarea class="in" style="min-height:300px;font-family:monospace;font-size:12px">${esc(txt)}</textarea><button class="btn full mt" data-act="close">Done</button>`);}
 
-document.addEventListener('change',e=>{ if(e.target.id==='bc'){ const co=document.getElementById('bco'), cp=curPlan(); if(co&&cp&&cp.team==='gcc'&&(!co.value.trim()||Object.values(COACHP).includes(co.value.trim()))) co.value=COACHP[e.target.value]||''; } });
+document.addEventListener('change',e=>{ if(e.target.id==='ns-to'){ const pk=document.getElementById('ns-pk'); if(pk) pk.style.display=e.target.value==='pick'?'block':'none'; } if(e.target.id==='bc'){ const co=document.getElementById('bco'), cp=curPlan(); const CP=(S.settings&&S.settings[cp&&cp.team]&&S.settings[cp.team].coach)||{}; if(co&&cp&&(!co.value.trim()||Object.values(CP).includes(co.value.trim()))) co.value=CP[e.target.value]||''; } });
 document.addEventListener('input',e=>{
   const f=e.target.dataset.f;
   if(f){const p=curPlan(); p[f]=e.target.value; if(f==='quote'){const w=weekStart(p.date); S.plans.forEach(x=>{if(x.team===p.team&&weekStart(x.date)===w) x.quote=p.quote;});} save();
@@ -1134,6 +1342,26 @@ window.PP_upload=async f=>{ if(RO) throw new Error('Only coaches can upload');
   if(!r.ok){ let m=''; try{m=(await r.json()).message||'';}catch(e){} throw new Error(/bucket/i.test(m)?'File storage isn’t set up yet (run the storage setup in Supabase).':'Upload failed'+(m?': '+m:'')); }
   return {n:f.name,u:C.url+'/storage/v1/object/public/pp-files/'+path,k:/^image\//.test(g.type)?'image':'file'}; };
 let EXT=true;
+
+const VAPID='BP5hyb8eDDUU92cHQuVLZ-ketqsoHygwuF8aZ08yLGJZ00v4vIv7efydb767rnxWy9OydlAwCHFoPYvsCdwaEoE';
+function b64u(s){const p='='.repeat((4-s.length%4)%4);const b=atob((s+p).replace(/-/g,'+').replace(/_/g,'/'));return Uint8Array.from(b,c=>c.charCodeAt(0));}
+let SWREG=null;
+if('serviceWorker' in navigator&&(location.protocol==='https:'||location.hostname==='localhost')){ navigator.serviceWorker.register('sw.js').then(r=>SWREG=r).catch(()=>{}); }
+async function swReady(){ if(SWREG) return SWREG; return await navigator.serviceWorker.ready; }
+window.PP_pushState=async()=>{ const r=await swReady(); const sub=await r.pushManager.getSubscription(); if(!sub) return null;
+  try{ const a=await rest('GET','pp_push?select=teams&endpoint=eq.'+encodeURIComponent(sub.endpoint)); return a&&a[0]?{teams:a[0].teams}:{teams:[]}; }catch(e){ return {teams:[]}; } };
+window.PP_pushOn=async teams=>{ const perm=await Notification.requestPermission(); if(perm!=='granted') throw new Error('denied');
+  const r=await swReady(); let sub=await r.pushManager.getSubscription(); if(!sub) sub=await r.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64u(VAPID)});
+  try{ await rest('POST','pp_push?on_conflict=endpoint',{endpoint:sub.endpoint,email:ACCT.email,teams,sub:sub.toJSON()},{Prefer:'resolution=merge-duplicates,return=minimal'}); }
+  catch(e){ throw new Error(/404|400/.test(e.message)?'off':'fail'); } };
+window.PP_pushOff=async()=>{ const r=await swReady(); const sub=await r.pushManager.getSubscription(); if(!sub) return;
+  try{ await rest('DELETE','pp_push?endpoint=eq.'+encodeURIComponent(sub.endpoint),null,{Prefer:'return=minimal'}); }catch(e){} await sub.unsubscribe(); };
+window.PP_notify=async msg=>{ const t=await tok(); const r=await fetch(C.url+'/functions/v1/pp-push',{method:'POST',headers:{apikey:C.key,Authorization:'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({action:'send',...msg})});
+  if(!r.ok) throw new Error('send-'+r.status); return await r.json(); };
+window.PP_ai=async(prompt,context)=>{ const t=await tok(); let r;
+  try{ r=await fetch(C.url+'/functions/v1/pp-ai',{method:'POST',headers:{apikey:C.key,Authorization:'Bearer '+t,'Content-Type':'application/json'},body:JSON.stringify({prompt,context})}); }catch(e){ throw new Error('ai-off'); }
+  if(r.status===404) throw new Error('ai-off'); if(r.status===403) throw new Error('not-coach');
+  const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error==='no-key'?'ai-off':'ai-fail'); return j; };
 window.PP_loadTeam=async()=>{ try{ try{ TEAMLIST=await rest('GET','pp_members?select=email,role,name,pos,team&order=role.asc,email.asc')||[]; EXT=true; }catch(e){ TEAMLIST=await rest('GET','pp_members?select=email,role&order=role.asc,email.asc')||[]; EXT=false; PROGERR=true; } }catch(e){ TEAMLIST=[]; toast('Couldn’t load the team list'); }
   TEAMLIST.sort((x,y)=>(x.role===y.role?0:x.role==='player'?-1:1)||pName(x).localeCompare(pName(y))); if(view==='team'||view==='prog') render(); };
 window.PP_loadPrograms=async()=>{ try{ const a=await rest('GET','pp_programs?select=*&order=updated_at.desc')||[]; const ch=JSON.stringify(a)!==JSON.stringify(PROGS); PROGS=a; if(ACCT&&ACCT.role==='coach') PROGERR=!EXT; if(ch&&!busyUI()&&(view==='team'||view==='prog'||view==='cal')){ const y=window.scrollY; render(); window.scrollTo(0,y);} }catch(e){ if(PROGS===null) PROGS=[]; if(ACCT&&ACCT.role==='coach'){ PROGERR=true; if(view==='team') render(); } } };
@@ -1143,10 +1371,11 @@ window.PP_saveMember=async(em,role,prof,want)=>{ try{
     await rest('PATCH','pp_members?email=eq.'+encodeURIComponent(em),row,{Prefer:'return=minimal'});
     for(const g of (PROGS||[])){ const has=(g.assigned||[]).includes(em), w=want.includes(g.id); if(has===w) continue;
       const as=w?[...(g.assigned||[]),em]:(g.assigned||[]).filter(x=>x!==em);
-      await rest('PATCH','pp_programs?id=eq.'+encodeURIComponent(g.id),{assigned:as,updated_at:new Date().toISOString()},{Prefer:'return=minimal'}); }
+      await rest('PATCH','pp_programs?id=eq.'+encodeURIComponent(g.id),{assigned:as,updated_at:new Date().toISOString()},{Prefer:'return=minimal'});
+      if(w) window.PP_notify({title:'New program',body:g.name+' was added to your programs in Practice Plus.',emails:[em]}).catch(()=>{}); }
     toast('Saved'); await PP_loadTeam(); await PP_loadPrograms(); render(); }catch(e){ toast('Couldn’t save. Try again.'); } };
-window.PP_saveProgram=async g=>{ try{ const row={id:g.id,name:g.name.trim(),body:g.body||'',files:g.files||[],assigned:g.assigned||[],created_by:g.created_by||ACCT.email,updated_at:new Date().toISOString()};
-    await rest('POST','pp_programs?on_conflict=id',row,{Prefer:'resolution=merge-duplicates,return=minimal'}); toast('Program saved'); await PP_loadPrograms(); render(); }
+window.PP_saveProgram=async g=>{ const prev=((PROGS||[]).find(x=>x.id===g.id)||{}).assigned||[]; try{ const row={id:g.id,name:g.name.trim(),body:g.body||'',files:g.files||[],assigned:g.assigned||[],created_by:g.created_by||ACCT.email,updated_at:new Date().toISOString()};
+    await rest('POST','pp_programs?on_conflict=id',row,{Prefer:'resolution=merge-duplicates,return=minimal'}); toast('Program saved'); { const nw=(g.assigned||[]).filter(e=>!prev.includes(e)); if(nw.length) window.PP_notify({title:'New program',body:g.name.trim()+' was added to your programs in Practice Plus.',emails:nw}).catch(()=>{}); } await PP_loadPrograms(); render(); }
   catch(e){ toast(/404|400/.test(e.message)?'Run supabase-programs.sql in Supabase first.':'Couldn’t save. Try again.'); } };
 window.PP_delProgram=async id=>{ try{ await rest('DELETE','pp_programs?id=eq.'+encodeURIComponent(id),null,{Prefer:'return=minimal'}); if(view==='prog') view='team'; await PP_loadPrograms(); render(); }catch(e){ toast('Couldn’t delete. Try again.'); } };
 window.PP_rmMember=async em=>{ try{ await rest('DELETE','pp_members?email=eq.'+encodeURIComponent(em),null,{Prefer:'return=minimal'});
