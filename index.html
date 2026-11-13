@@ -95,6 +95,19 @@ nav svg{width:22px;height:22px}
 .mt{margin-top:12px}.mt2{margin-top:20px}
 .empty{text-align:center;padding:30px 10px;color:var(--muted)}
 /* dugout card */
+.dcard .cch{font-weight:600;color:#1f4fb8;font-size:12.5px}
+@media print{
+  @page{size:letter portrait;margin:0.4in}
+  html,body{background:#fff!important;color:#000!important}
+  body>*:not(#app){display:none!important}
+  #app{padding:0!important;margin:0!important;max-width:none!important}
+  #app>*:not(.dcard){display:none!important}
+  .dcard{background:#fff!important;border-radius:0!important;padding:0!important;margin:0!important;box-shadow:none!important}
+  .dcard,.dcard *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .dcard tr,.dcard .quote,.ggrid>div{break-inside:avoid}
+  .dcard .ggrid{grid-template-columns:1fr 1fr}
+  .dcard img{max-width:110px;max-height:110px}
+}
 .dcard{background:#f7f5ee;color:#111;border-radius:12px;padding:18px 16px;font-family:Inter,sans-serif}
 .dcard .hd{border-bottom:3px solid #1f4fb8;padding-bottom:8px;margin-bottom:8px}
 .dcard .ttl{font-family:"Barlow Condensed",sans-serif;font-size:26px;font-weight:800;text-transform:uppercase;color:#1f4fb8;line-height:1}
@@ -213,6 +226,13 @@ const todayISO=()=>iso(new Date());
 const parseD=s=>new Date(s+'T12:00');
 const addDays=(s,n)=>{const d=parseD(s);d.setDate(d.getDate()+n);return iso(d);};
 const weekStart=s=>{const d=parseD(s);d.setDate(d.getDate()-((d.getDay()+6)%7));return iso(d);};
+const COACHP={hit:'Sherman',def:'Wass/Manella'};
+const GEARD={1:'Black Shirt, Grey Pants',4:'Black Shirt, Grey Pants',2:'Blue Shirt, Grey Pants',5:'Blue Shirt, Grey Pants',3:'Grey Shirt, Grey Pants',6:'Grey Shirt, Grey Pants'};
+function gearFor(team,date){return team==='gcc'?(GEARD[parseD(date).getDay()]||''):'';}
+function weekQuote(team,date){const w=weekStart(date);const q=(S.plans||[]).find(x=>x.team===team&&x.quote&&weekStart(x.date)===w);return q?q.quote:'';}
+function presetCoach(b,team){ if(team!=='gcc'||!b) return; if(b.coach===undefined&&COACHP[b.cat]) b.coach=COACHP[b.cat];
+  (b.stations||[]).forEach(x=>{ if(x._p) return; x._p=1; if(!x.coach){ if(/defen|fungo|ground ?ball|fly ?ball/i.test(x.drill||'')) x.coach=COACHP.def; else if(/hit|bp|cage|tee/i.test(x.drill||'')) x.coach=COACHP.hit; } }); }
+function presetAll(){ const t=todayISO(); (S.plans||[]).filter(p=>p.team==='gcc'&&p.date>=t).forEach(p=>[...p.blocks,...(p.groups||[]).flatMap(g=>g.blocks)].forEach(b=>presetCoach(b,'gcc'))); }
 let calWeek=weekStart(todayISO()), calMode='week', calMonth=todayISO().slice(0,7), backTo='plans', newDate=null;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -252,7 +272,7 @@ function seed(){
 }
 function load(){ try{const r=localStorage.getItem('practiceplus_v1'); if(r) return JSON.parse(r);}catch(e){} return seed(); }
 let RO=false, ACCT=null, TEAMLIST=null, PROGS=null, PROGERR=false, teamTab='players', progId=null, pdraft=null;
-function save(){ try{localStorage.setItem('practiceplus_v1',JSON.stringify(S));}catch(e){} if(window.PP_push) window.PP_push(); }
+function save(){ try{presetAll();}catch(e){} try{localStorage.setItem('practiceplus_v1',JSON.stringify(S));}catch(e){} if(window.PP_push) window.PP_push(); }
 S=load();
 function defGroups(start){return [{id:uid(),name:'Infield',start:start||'15:00',blocks:[]},{id:uid(),name:'Outfield',start:start||'15:00',blocks:[]}];}
 function demoGroups(){const B=(n,c,m)=>({id:uid(),name:n,cat:c,min:m,stations:[],notes:''});
@@ -266,7 +286,7 @@ function demoGroups(){const B=(n,c,m)=>({id:uid(),name:n,cat:c,min:m,stations:[]
 const DOWS=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 function planFromTpl(tpl,team,date){
   const c=JSON.parse(JSON.stringify(tpl));
-  return {id:uid(),team,date,start:c.start,location:c.location||'',focus:c.focus||'',notes:'',gear:c.gear||'',quote:'',
+  return {id:uid(),team,date,start:c.start,location:c.location||'',focus:c.focus||'',notes:'',gear:gearFor(team,date)||c.gear||'',quote:weekQuote(team,date),
     blocks:c.blocks.map(b=>({...b,id:uid()})),groups:(c.groups||defGroups(c.start)).map(g=>({...g,id:uid(),blocks:g.blocks.map(b=>({...b,id:uid()}))})),tplId:tpl.id};
 }
 function trimMins(blocks,T){
@@ -482,6 +502,12 @@ if(!S.liftPicV3){ const PICS=[{n:'Warm up 1',u:'https://drive.google.com/file/d/
   const fix=b=>{ if(b.cat!=='cond'||!/lift/i.test(b.name||'')) return; b.files=(b.files||[]).filter(f=>!/(1zbxOeTzAEAPoQ3lFQN5gUZXsBHmcCzH1|1H1tEMHbfF2Dk6Nfmkq0UmHFIjBk5umza|lift-1\.jpg|warm-up-1\.jpg)/.test(f.u)); PICS.forEach(f=>{ if(!b.files.some(x=>x.u===f.u)) b.files.push({...f}); }); };
   S.plans.filter(p=>p.date>='2026-11-10'&&p.date<='2026-11-30').forEach(p=>{ p.blocks.forEach(fix); (p.groups||[]).forEach(g=>g.blocks.forEach(fix)); });
   S.liftPicV3=true; }
+
+if(!S.gearQV1){ const t='2026-11-13';
+  S.plans.filter(p=>p.team==='gcc'&&p.date>=t&&!/bills/i.test(p.focus||'')).forEach(p=>{ const g=gearFor('gcc',p.date); if(g) p.gear=g; });
+  const wk={}; S.plans.filter(p=>p.date>='2026-11-16').sort((a,b)=>a.date<b.date?-1:1).forEach(p=>{ const k=p.team+'|'+weekStart(p.date); if(p.quote&&!wk[k]) wk[k]=p.quote; });
+  S.plans.filter(p=>p.date>='2026-11-16').forEach(p=>{ const w=weekStart(p.date); const q=wk[p.team+'|'+w]||wk['gcc|'+w]; if(q) p.quote=q; });
+  S.gearQV1=true; }
 
 save();
 
@@ -699,7 +725,7 @@ function cardText(p){
   const team=TEAMS.find(t=>t.id===p.team).name;
   let s=`${team.toUpperCase()} PRACTICE — ${dateStr(p.date)}\n${p.focus||''}\n${p.location||''}${p.gear?'\nGear: '+p.gear:''}\n`;
   const sec=(title,blocks,start)=>{if(!blocks.length)return; let c=toM(start); s+=`\n${title.toUpperCase()}\n`;
-    blocks.forEach(b=>{const st=c;c+=+b.min;s+=`${fmt(st)}-${fmt(c)}  ${b.name}\n`;
+    blocks.forEach(b=>{const st=c;c+=+b.min;s+=`${fmt(st)}-${fmt(c)}  ${b.name}${b.coach?' — '+b.coach:''}\n`;
       b.stations.forEach(x=>s+=`    • ${x.group}: ${x.drill}${x.coach?' ('+x.coach+')':''}\n`);
       (b.focus||'').split('\n').map(x=>x.trim()).filter(Boolean).forEach(x=>s+=`    - ${x}\n`);
       (b.files||[]).forEach(f=>s+=`    ${f.n}: ${f.u}\n`);
@@ -713,13 +739,13 @@ function cardText(p){
 function cardTable(blocks,start,showMin){
   let c=toM(start);
   return `<table>${blocks.map(b=>{const st=c;c+=+b.min;return `<tr><td class="tm" style="border-left:4px solid ${(CATS[b.cat]||CATS.other).color};padding-left:6px">${fmt(st)}${showMin?'':'–'+fmt(c)}</td>
-    <td><b>${esc(b.name)}</b>${focusHTML(b)}${b.stations.map(x=>`<div class="sub">• <b>${esc(x.group)}</b>: ${esc(x.drill)}${x.coach?' ('+esc(x.coach)+')':''}</div>`).join('')}${b.notes?`<div class="sub"><i>${esc(b.notes)}</i></div>`:''}</td>
+    <td><b>${esc(b.name)}</b>${b.coach?` <span class="cch">— ${esc(b.coach)}</span>`:''}${focusHTML(b)}${b.stations.map(x=>`<div class="sub">• <b>${esc(x.group)}</b>: ${esc(x.drill)}${x.coach?' ('+esc(x.coach)+')':''}</div>`).join('')}${b.notes?`<div class="sub"><i>${esc(b.notes)}</i></div>`:''}</td>
     ${showMin?`<td class="mn">${b.min}m</td>`:''}</tr>`;}).join('')}</table>`;
 }
 function vCard(){
   const p=curPlan(); const team=TEAMS.find(t=>t.id===p.team).name; const gs=p.groups.filter(g=>g.blocks.length);
   const rng=(bl,st)=>fmt(toM(st))+'–'+fmt(toM(st)+total({blocks:bl}));
-  return `<div class="row mt"><button class="btn sm" data-act="back">${RO?'‹ Back':'‹ Back to plan'}</button><div class="grow"></div><button class="btn sm gold" data-act="copy">Copy as text</button></div>
+  return `<div class="row mt"><button class="btn sm" data-act="back">${RO?'‹ Back':'‹ Back to plan'}</button><div class="grow"></div><button class="btn sm" data-act="copy">Copy as text</button><button class="btn sm gold" data-act="print" style="margin-left:6px">Print / PDF</button></div>
   <div class="dcard mt"><div class="hd"><div class="ttl">${esc(team)} Practice Plan</div>
   <div style="font-weight:700;margin-top:4px">${dateStr(p.date)}${p.location?' · '+esc(p.location):''}</div>
   ${p.focus?`<div style="margin-top:2px">Focus: ${esc(p.focus)}</div>`:''}
@@ -728,7 +754,7 @@ function vCard(){
   ${gs.length?`<div class="ggrid">${gs.map(g=>`<div><div class="gh">${esc(g.name)} indy<span>${rng(g.blocks,g.start)}</span></div>${cardTable(g.blocks,g.start,false)}</div>`).join('')}</div>`:''}
   ${p.quote?`<div class="quote"><b style="font-style:normal">Quote of the week:</b> "${esc(p.quote)}"</div>`:''}
   ${p.notes?`<div style="margin-top:10px;font-size:13px"><b>Notes:</b> ${esc(p.notes)}</div>`:''}</div>
-  <p class="muted small">Screenshot this card for your phone or the dugout, or copy it as text to paste into a group chat.</p>`;
+  <p class="muted small">Tap <b>Print / PDF</b> to print it or save it as a PDF. On a phone, choose Print, then share or save the PDF.</p>`;
 }
 
 function vLibrary(){
@@ -833,11 +859,12 @@ function toast(m){const d=document.createElement('div');d.className='toast';d.te
 
 let draft=null;
 function blockSheet(b,isNew){
-  draft=JSON.parse(JSON.stringify(b));
+  draft=JSON.parse(JSON.stringify(b)); {const cp=curPlan(); if(cp) presetCoach(draft,cp.team);}
   const draw=()=>{sheet(`<h3>${isNew?'Add block':'Edit block'}</h3>
     <label class="f">Block name</label><input class="in" id="bn" value="${esc(draft.name)}" placeholder="e.g. Defensive stations">
     <div class="mt"><label class="f" for="bfo">${draft.cat==='cond'?'Lift details (exercises, sets × reps)':'Focus / what we\'re doing'}</label><textarea class="in" id="bfo" rows="4" placeholder="One per line, e.g.&#10;INF: backhands, DP feeds&#10;OF: low line drives, gap reads">${esc(draft.focus||'')}</textarea></div>
     <div class="mt"><label class="f">Category</label><select class="in" id="bc">${Object.entries(CATS).map(([k,c])=>`<option value="${k}" ${draft.cat===k?'selected':''}>${c.label}</option>`).join('')}</select></div>
+    <div class="mt"><label class="f" for="bco">Coach</label><input class="in" id="bco" value="${esc(draft.coach||'')}" placeholder="e.g. Sherman"></div>
     <div class="mt"><label class="f">Minutes</label><div class="stepper"><button data-act="mm" data-id="-5">−5</button><button data-act="mm" data-id="-1">−1</button><div class="v" id="bmv">${draft.min}</div><button data-act="mm" data-id="1">+1</button><button data-act="mm" data-id="5">+5</button></div></div>
     <div class="mt2"><label class="f">Stations / groups (optional)</label>
       ${draft.stations.map((s,i)=>`<div class="st-row"><input class="in" list="grpl" data-st="${i}" data-k="group" value="${esc(s.group)}" placeholder="Group"><input class="in" data-st="${i}" data-k="drill" value="${esc(s.drill)}" placeholder="Drill"><input class="in" data-st="${i}" data-k="coach" value="${esc(s.coach)}" placeholder="Coach"><button class="x" data-act="rmst" data-id="${i}">✕</button></div>`).join('')}
@@ -856,7 +883,7 @@ function blockSheet(b,isNew){
 function syncDraft(){
   const g=id=>document.getElementById(id);
   if(!g('bn')) return;
-  draft.name=g('bn').value; draft.cat=g('bc').value; draft.notes=g('bno').value; draft.focus=g('bfo').value; draft.files=draft.files||[];
+  draft.name=g('bn').value; draft.cat=g('bc').value; if(g('bco')) draft.coach=g('bco').value.trim(); draft.notes=g('bno').value; draft.focus=g('bfo').value; draft.files=draft.files||[];
   layer.querySelectorAll('[data-st]').forEach(el=>draft.stations[+el.dataset.st][el.dataset.k]=el.value);
 }
 function drillSheet(d,isNew){
@@ -912,7 +939,7 @@ function tplNameSheet(){
 function newPlan(tpl){
   backTo=view==='cal'?'cal':'plans';
   const p={id:uid(),team:S.team,date:newDate||todayISO(),start:tpl?tpl.start:'15:00',location:'',focus:tpl?tpl.focus:'',notes:'',
-    gear:tpl?(tpl.gear||''):'',quote:'',blocks:tpl?JSON.parse(JSON.stringify(tpl.blocks)):[],groups:tpl&&tpl.groups?JSON.parse(JSON.stringify(tpl.groups)):defGroups(tpl?tpl.start:'15:00')};
+    gear:gearFor(S.team,newDate||todayISO())||(tpl?(tpl.gear||''):''),quote:weekQuote(S.team,newDate||todayISO()),blocks:tpl?JSON.parse(JSON.stringify(tpl.blocks)):[],groups:tpl&&tpl.groups?JSON.parse(JSON.stringify(tpl.groups)):defGroups(tpl?tpl.start:'15:00')};
   schedKey='team';
   newDate=null;S.plans.push(p);save();editingId=p.id;view='edit';closeSheet();render();window.scrollTo(0,0);
 }
@@ -923,7 +950,7 @@ document.addEventListener('click',e=>{ if(e.target.closest&&e.target.closest('[d
   const el=e.target.closest('[data-act]'); if(!el) return;
   const a=el.dataset.act, id=el.dataset.id, p=curPlan(); const o=p&&(view==='edit'||view==='library')?sched(p).obj:null;
   if(a==='closebg'){ if(e.target===el) closeSheet(); return; }
-  if(RO){ const ok=['close','team','nav','calmode','caltoday','calprev','calnext','gotoweek','copy','libcat','vidtab','expd','sched','signout','prog','progback'];
+  if(RO){ const ok=['close','team','nav','calmode','caltoday','calprev','calnext','gotoweek','copy','libcat','vidtab','expd','sched','signout','prog','progback','print'];
     if(a==='open'){ editingId=id; backTo=view==='cal'?'cal':'plans'; view='card'; render(); window.scrollTo(0,0); return; }
     if(a==='back'){ view=backTo; render(); return; }
     if(!ok.includes(a)) return; }
@@ -986,6 +1013,7 @@ document.addEventListener('click',e=>{ if(e.target.closest&&e.target.closest('[d
     case 'open': schedKey='team'; backTo=view==='cal'?'cal':'plans'; editingId=id; view='edit'; render(); window.scrollTo(0,0); break;
     case 'back': view=pickMode?'edit':'edit'; pickMode=false; render(); break;
     case 'card': view='card'; render(); window.scrollTo(0,0); break;
+    case 'print': { const p=curPlan(), t0=document.title; document.title=(TEAMS.find(t=>t.id===p.team).name+' Practice '+p.date).replace(/\s+/g,' '); setTimeout(()=>{ window.print(); setTimeout(()=>document.title=t0,1000); },50); break; }
     case 'copy': {const txt=cardText(p);
       try{navigator.clipboard.writeText(txt).then(()=>toast('Copied'),()=>showText(txt));}catch(err){showText(txt);} break;}
     case 'up': case 'down': {const i=o.blocks.findIndex(b=>b.id===id),j=a==='up'?i-1:i+1; if(j<0||j>=o.blocks.length)break;
@@ -1027,9 +1055,10 @@ document.addEventListener('click',e=>{ if(e.target.closest&&e.target.closest('[d
 });
 function showText(txt){sheet(`<h3>Copy plan</h3><textarea class="in" style="min-height:300px;font-family:monospace;font-size:12px">${esc(txt)}</textarea><button class="btn full mt" data-act="close">Done</button>`);}
 
+document.addEventListener('change',e=>{ if(e.target.id==='bc'){ const co=document.getElementById('bco'), cp=curPlan(); if(co&&cp&&cp.team==='gcc'&&(!co.value.trim()||Object.values(COACHP).includes(co.value.trim()))) co.value=COACHP[e.target.value]||''; } });
 document.addEventListener('input',e=>{
   const f=e.target.dataset.f;
-  if(f){const p=curPlan(); p[f]=e.target.value; save();
+  if(f){const p=curPlan(); p[f]=e.target.value; if(f==='quote'){const w=weekStart(p.date); S.plans.forEach(x=>{if(x.team===p.team&&weekStart(x.date)===w) x.quote=p.quote;});} save();
     if(f==='start'||f==='date'){ /* re-render times without losing focus on text fields */ const y=window.scrollY; render(); window.scrollTo(0,y);} }
   if(e.target.dataset.gf){const g=sched(curPlan()).obj; g[e.target.dataset.gf]=e.target.value; save(); if(e.target.dataset.gf==='start'){const y=window.scrollY; render(); window.scrollTo(0,y);}}
   if(e.target.id==='vidq'){vidQ=e.target.value; const pos=e.target.selectionStart; render(); const q=document.getElementById('vidq'); q.focus(); q.setSelectionRange(pos,pos);}
